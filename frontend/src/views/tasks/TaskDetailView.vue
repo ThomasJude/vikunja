@@ -1054,7 +1054,28 @@ const activeFieldElements: { [id in FieldType]: HTMLElement | null } = reactive(
 	startDate: null,
 })
 
+interface FieldComponentApi {
+	open?: () => void
+}
+
+const activeFieldComponents: { [id in FieldType]: FieldComponentApi | null } = reactive({
+	assignees: null,
+	attachments: null,
+	color: null,
+	dueDate: null,
+	endDate: null,
+	labels: null,
+	moveProject: null,
+	percentDone: null,
+	priority: null,
+	relatedTasks: null,
+	reminders: null,
+	repeatAfter: null,
+	startDate: null,
+})
+
 function setFieldRef(name, e) {
+	activeFieldComponents[name] = e
 	activeFieldElements[name] = unrefElement(e)
 }
 
@@ -1071,6 +1092,10 @@ function setFieldActive(fieldName: keyof typeof activeFields) {
 
 		// scroll the field to the center of the screen if not in viewport already
 		scrollIntoView(el)
+
+		// setTimeout(..., 0) is preventing the *original* click to open a field from also being
+		// detected as an outside click and immediately closing the popup.
+		setTimeout(() => activeFieldComponents[fieldName]?.open?.(), 0) 
 	})
 }
 
