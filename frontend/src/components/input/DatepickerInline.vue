@@ -8,6 +8,7 @@
 			layout="chips"
 			:active="date"
 			@select="setShortcut"
+			@keydown="handleQuickSelectKeydown"
 		/>
 
 		<div class="datepicker-inline__body">
@@ -16,6 +17,7 @@
 				layout="list"
 				:active="date"
 				@select="setShortcut"
+				@keydown="handleQuickSelectKeydown"
 			/>
 			<CalendarMonth
 				class="datepicker-inline__calendar"
@@ -61,6 +63,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
 	'update:modelValue': [Date | null],
+	'quickSelectConfirmed': [],
 }>()
 
 const date = ref<Date | null>(null)
@@ -110,6 +113,19 @@ function setTime({hours, minutes}: {hours: number, minutes: number}) {
 	const result = new Date(date.value ?? new Date())
 	result.setHours(hours, minutes, 0, 0)
 	update(result)
+}
+
+function handleQuickSelectKeydown(e: KeyboardEvent) {
+	if (!(e.target instanceof HTMLButtonElement) || !e.target.classList.contains('datepicker__quick-select-date')) {
+		return
+	}
+
+	if (e.key === 'Enter') {
+		e.preventDefault()
+		e.target.click()
+		emit('quickSelectConfirmed')
+		return
+	}
 }
 </script>
 
