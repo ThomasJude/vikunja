@@ -116,15 +116,37 @@ function setTime({hours, minutes}: {hours: number, minutes: number}) {
 }
 
 function handleQuickSelectKeydown(e: KeyboardEvent) {
-	if (!(e.target instanceof HTMLButtonElement) || !e.target.classList.contains('datepicker__quick-select-date')) {
+	const targetEl = e.target as HTMLButtonElement
+	if (!targetEl.classList?.contains('datepicker__quick-select-date')) {
 		return
 	}
 
-	if (e.key === 'Enter') {
-		e.preventDefault()
-		e.target.click()
-		emit('quickSelectConfirmed')
+	const containerEl = targetEl.parentNode
+	const options = containerEl === null ? [] :
+		Array.from(containerEl.querySelectorAll<HTMLButtonElement>('.datepicker__quick-select-date'))
+	const optionIdx = options.indexOf(targetEl)
+	if (optionIdx === -1) {
 		return
+	}
+
+	switch (e.key) {
+		case 'ArrowUp':
+			if (optionIdx > 0) {
+				e.preventDefault()
+				options[optionIdx-1]?.focus()
+			}
+			break
+		case 'ArrowDown':
+			if (optionIdx < options.length-1) {
+				e.preventDefault()
+				options[optionIdx+1]?.focus()
+			}
+			break
+		case 'Enter':
+			e.preventDefault()
+			targetEl.click()
+			emit('quickSelectConfirmed')
+			break
 	}
 }
 </script>
