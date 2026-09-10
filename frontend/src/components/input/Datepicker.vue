@@ -170,9 +170,9 @@ watch(show, async (isOpen) => {
 	await nextTick()
 	const firstShortcutEl = datepickerPopup.value?.querySelector<HTMLElement>('.datepicker__quick-select-date')
 	if (firstShortcutEl) {
-	  firstShortcutEl.focus()
+		firstShortcutEl.focus({ focusVisible: true })
 	} else {
-		datepickerPopup.value?.focus()
+		datepickerPopup.value?.focus({ focusVisible: true })
 	}
 })
 
