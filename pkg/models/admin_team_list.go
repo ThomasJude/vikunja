@@ -19,6 +19,7 @@ package models
 import (
 	"fmt"
 
+	"code.vikunja.io/api/pkg/db"
 	"code.vikunja.io/api/pkg/user"
 	"xorm.io/builder"
 	"xorm.io/xorm"
@@ -32,7 +33,7 @@ func ListTeamsAsAdmin(s *xorm.Session, doer *user.User, search string, page, per
 	teams := []InviteLinkTeam{}
 	cond := builder.Or(builder.IsNull{"external_id"}, builder.Eq{"external_id": ""})
 	if search != "" {
-		cond = cond.And(builder.Like{"name", "%" + search + "%"})
+		cond = cond.And(db.ILIKE("name", search))
 	}
 	total, err := s.Table("teams").Select("id, name").Where(cond).Limit(limit, start).OrderBy("id ASC").FindAndCount(&teams)
 	if err != nil {
