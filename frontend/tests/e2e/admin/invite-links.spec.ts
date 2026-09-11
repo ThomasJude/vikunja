@@ -1,0 +1,84 @@
+import {test, expect} from '../../support/fixtures'
+import {UserFactory} from '../../factories/user'
+import {TeamFactory} from '../../factories/team'
+import {LicenseFactory} from '../../factories/license'
+import {login, setupApiUrl} from '../../support/authenticateUser'
+
+test.describe('Invite links', () => {
+	test.beforeEach(async ({page}) => {
+		await setupApiUrl(page)
+		await LicenseFactory.enable(['admin_panel', 'user_invites'])
+	})
+
+	test.afterEach(async () => {
+		await LicenseFactory.disable()
+	})
+
+	test('admin creates and copies a link, guest registers and joins its team', async ({page, apiContext, browser, baseURL}) => {
+		const [admin] = await UserFactory.create(1, {is_admin: true}, false)
+		const [team] = await TeamFactory.create(1, {id: 1, name: 'Invited team'}, false)
+		await login(page, apiContext, admin)
+		await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+		await page.goto('/admin')
+		await page.getByRole('link', {name: 'Invite links', exact: true}).click()
+		await page.getByRole('button', {name: 'Create invite link', exact: true}).click()
+		await page.getByLabel('Link name', {exact: true}).fill('Welcome aboard')
+		await page.getByRole('combobox', {name: 'Teams to join'}).click()
+		await page.getByRole('option', {name: 'Invited team'}).click()
+		await page.getByLabel('Maximum uses').fill('1')
+		await page.getByRole('button', {name: 'Create invite link', exact: true}).last().click()
+		await expect(page.getByText('This link is shown only once.', {exact: false})).toBeVisible()
+		const url = await page.getByLabel('Invite link', {exact: true}).inputValue()
+		await page.getByRole('button', {name: 'Copy link', exact: true}).click()
+		await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url)
+		await page.getByRole('button', {name: 'Close', exact: true}).last().click()
+		await page.reload()
+		await expect(page.getByLabel('Invite link', {exact: true})).not.toBeVisible()
+		await page.evaluate(() => localStorage.removeItem('token'))
+		await page.context().clearCookies()
+
+		const guest = await browser.newContext({baseURL})
+		try {
+			const guestPage = await guest.newPage()
+			await setupApiUrl(guestPage)
+			// The harness serves the frontend and API on separate ports.
+			await guestPage.goto(new URL(url).pathname)
+			await expect(guestPage.getByText('You will join: Invited team')).toBeVisible()
+			await guestPage.getByLabel('Username', {exact: true}).fill('invited-guest')
+			await guestPage.getByLabel('Email address', {exact: true}).fill('invited-guest@example.com')
+			await guestPage.locator('#password').fill('12345678')
+			await guestPage.locator('#register-submit').click()
+			await expect(guestPage).toHaveURL('/')
+			const token = await guestPage.evaluate(() => localStorage.getItem('token'))
+			const teams = await apiContext.get('teams', {headers: {Authorization: `Bearer ${token}`}})
+			expect(teams.ok()).toBeTruthy()
+			expect((await teams.json()).map((entry: {id: number}) => entry.id)).toContain(team.id)
+			const deadPage = await guest.newPage()
+			await setupApiUrl(deadPage)
+			await deadPage.goto('/login')
+			await deadPage.evaluate(() => localStorage.removeItem('token'))
+			await guest.clearCookies()
+			await deadPage.goto(new URL(url).pathname)
+			await expect(deadPage.getByText('This invite link is invalid or expired.')).toBeVisible()
+			await expect(deadPage.locator('#registerform')).not.toBeVisible()
+		} finally {
+			await guest.close()
+		}
+	})
+
+	test('unknown invitation is reachable anonymously and hides registration', async ({page}) => {
+		await page.goto('/invite/unknown-link')
+		await expect(page).toHaveURL('/invite/unknown-link')
+		await expect(page.getByText('This invite link is invalid or expired.')).toBeVisible()
+		await expect(page.locator('#registerform')).not.toBeVisible()
+		await expect(page.getByRole('link', {name: 'Login', exact: true})).toBeVisible()
+	})
+
+	test('tab is hidden without user_invites', async ({page, apiContext}) => {
+		await LicenseFactory.enable(['admin_panel'])
+		const [admin] = await UserFactory.create(1, {is_admin: true}, false)
+		await login(page, apiContext, admin)
+		await page.goto('/admin')
+		await expect(page.getByRole('link', {name: 'Invite links', exact: true})).not.toBeVisible()
+	})
+})
