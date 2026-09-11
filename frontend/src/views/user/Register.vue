@@ -1,5 +1,30 @@
 <template>
-	<div v-if="configStore.auth.local.registrationEnabled">
+	<template v-if="inviteToken && inviteState.status !== 'ready'">
+		<Message v-if="inviteState.status === 'loading'">
+			{{ $t('misc.loading') }}
+		</Message>
+		<template v-else>
+			<Message
+				variant="danger"
+				class="mbe-4"
+			>
+				{{ $t(inviteState.status === 'invalid' ? 'user.auth.inviteInvalid' : 'user.auth.inviteLoadFailed') }}
+			</Message>
+			<RouterLink
+				:to="{name: 'user.login'}"
+				class="inline-link"
+			>
+				{{ $t('user.auth.login') }}
+			</RouterLink>
+		</template>
+	</template>
+	<div v-else-if="inviteToken || configStore.auth.local.registrationEnabled">
+		<Message
+			v-if="inviteToken && inviteState.status === 'ready' && inviteState.link.teams.length > 0"
+			class="mbe-4"
+		>
+			{{ $t('user.auth.inviteTeams', {teams: inviteState.link.teams.map(team => team.name).join(', ')}) }}
+		</Message>
 		<Message
 			v-if="errorMessage !== ''"
 			variant="danger"
@@ -107,10 +132,12 @@
 
 <script setup lang="ts">
 import {useDebounceFn} from '@vueuse/core'
-import {computed, onBeforeMount, reactive, ref, toRaw} from 'vue'
+import {computed, onBeforeMount, reactive, ref, toRaw, watch} from 'vue'
 import {useI18n} from 'vue-i18n'
 
 import router from '@/router'
+import InviteRegistrationService from '@/services/inviteRegistration'
+import type {IInviteLink} from '@/modelTypes/IInviteLink'
 import Message from '@/components/misc/Message.vue'
 import {isEmail} from '@/helpers/isEmail'
 import Password from '@/components/input/Password.vue'
@@ -121,6 +148,22 @@ import {useRedirectToLastVisited} from '@/composables/useRedirectToLastVisited'
 import {useAuthStore} from '@/stores/auth'
 import {useConfigStore} from '@/stores/config'
 import {validatePassword} from '@/helpers/validatePasswort'
+
+const props = withDefaults(defineProps<{inviteToken?: string}>(), {inviteToken: ''})
+type InviteState = {status: 'loading' | 'invalid' | 'error'} | {status: 'ready', link: IInviteLink}
+const inviteState = ref<InviteState>({status: 'loading'})
+const inviteService = new InviteRegistrationService()
+watch(() => props.inviteToken, async token => {
+	if (!token) return
+	inviteState.value = {status: 'loading'}
+	try {
+		const link = await inviteService.get(token)
+		if (token === props.inviteToken) inviteState.value = {status: 'ready', link}
+	} catch (e) {
+		if (token !== props.inviteToken) return
+		inviteState.value = {status: (e as {response?: {status: number}})?.response?.status === 404 ? 'invalid' : 'error'}
+	}
+}, {immediate: true})
 
 const {t} = useI18n()
 const authStore = useAuthStore()
@@ -233,14 +276,22 @@ async function submit() {
 	serverValidationErrors.value = {}
 	validatePasswordInitially.value = true
 
-	if (!everythingValid.value) {
+	if (!everythingValid.value || (props.inviteToken && inviteState.value.status !== 'ready')) {
 		return
 	}
 
 	try {
-		await authStore.register(toRaw(credentials))
+		if (props.inviteToken) {
+			await authStore.registerWithInvite(toRaw(credentials), props.inviteToken)
+		} else {
+			await authStore.register(toRaw(credentials))
+		}
 		redirectIfSaved()
 	} catch (e: unknown) {
+		if (props.inviteToken && e instanceof Object && 'code' in e && e.code === 20001) {
+			inviteState.value = {status: 'invalid'}
+			return
+		}
 		// 1012 = email not confirmed: registration itself succeeded
 		if (e instanceof Object && 'code' in e && e.code === 1012) {
 			confirmEmailMessage.value = t('user.auth.registrationConfirmEmail')

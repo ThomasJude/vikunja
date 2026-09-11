@@ -95,6 +95,13 @@ const router = createRouter({
 			},
 		},
 		{
+			path: '/invite/:token',
+			name: 'user.invite',
+			component: Register,
+			props: route => ({inviteToken: route.params.token}),
+			meta: {title: 'user.auth.createAccount'},
+		},
+		{
 			path: '/user/settings',
 			name: 'user.settings',
 			component: () => import('@/views/user/Settings.vue'),
