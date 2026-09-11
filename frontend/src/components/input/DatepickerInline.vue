@@ -8,7 +8,7 @@
 			layout="chips"
 			:active="date"
 			@select="setShortcut"
-			@keydown="handleQuickSelectKeydown"
+			@confirm="emit('quickSelectConfirmed')"
 		/>
 
 		<div class="datepicker-inline__body">
@@ -17,7 +17,7 @@
 				layout="list"
 				:active="date"
 				@select="setShortcut"
-				@keydown="handleQuickSelectKeydown"
+				@confirm="emit('quickSelectConfirmed')"
 			/>
 			<CalendarMonth
 				class="datepicker-inline__calendar"
@@ -113,41 +113,6 @@ function setTime({hours, minutes}: {hours: number, minutes: number}) {
 	const result = new Date(date.value ?? new Date())
 	result.setHours(hours, minutes, 0, 0)
 	update(result)
-}
-
-function handleQuickSelectKeydown(e: KeyboardEvent) {
-	const targetEl = e.target as HTMLButtonElement
-	if (!targetEl.classList?.contains('datepicker__quick-select-date')) {
-		return
-	}
-
-	const containerEl = targetEl.parentNode
-	const options = containerEl === null ? [] :
-		Array.from(containerEl.querySelectorAll<HTMLButtonElement>('.datepicker__quick-select-date'))
-	const optionIdx = options.indexOf(targetEl)
-	if (optionIdx === -1) {
-		return
-	}
-
-	switch (e.key) {
-		case 'ArrowUp':
-			if (optionIdx > 0) {
-				e.preventDefault()
-				options[optionIdx-1]?.focus()
-			}
-			break
-		case 'ArrowDown':
-			if (optionIdx < options.length-1) {
-				e.preventDefault()
-				options[optionIdx+1]?.focus()
-			}
-			break
-		case 'Enter':
-			e.preventDefault()
-			targetEl.click()
-			emit('quickSelectConfirmed')
-			break
-	}
 }
 </script>
 
