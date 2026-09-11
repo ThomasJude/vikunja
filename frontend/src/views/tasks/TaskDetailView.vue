@@ -1065,10 +1065,18 @@ function setFieldRef(name: FieldType, e) {
 function setFieldActive(fieldName: keyof typeof activeFields) {
 	activeFields[fieldName] = true
 	nextTick(() => {
-		const datepicker = fieldName === 'dueDate' ? dueDatePicker.value
-			: fieldName === 'startDate' ? startDatePicker.value
-				: fieldName === 'endDate' ? endDatePicker.value
-					: null
+		let datepicker: InstanceType<typeof Datepicker> | null = null
+		switch (fieldName) {
+			case 'dueDate':
+				datepicker = dueDatePicker.value
+				break
+			case 'startDate':
+				datepicker = startDatePicker.value
+				break
+			case 'endDate':
+				datepicker = endDatePicker.value
+				break
+		}
 		const el: HTMLElement | null = datepicker?.$el ?? activeFieldElements[fieldName]
 
 		if (!el) {
