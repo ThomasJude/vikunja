@@ -53,10 +53,19 @@ func TestHumaInviteLinkAdmin(t *testing.T) {
 	require.Contains(t, teams.Body.String(), "testteam8")
 	teams = adminReq(t, e, http.MethodGet, "/api/v2/admin/teams", admin, "")
 	require.NotContains(t, teams.Body.String(), "testteam14")
-	for _, body := range []string{`{"name":"bad","team_ids":[999]}`, `{"name":"external","team_ids":[14]}`, `{"name":"zero","max_uses":0}`} {
-		res := adminReq(t, e, http.MethodPost, "/api/v2/admin/invite-links", admin, body)
-		require.GreaterOrEqual(t, res.Code, 400)
-		require.Less(t, res.Code, 500)
+	for _, tc := range []struct {
+		name   string
+		body   string
+		status int
+	}{
+		{"unknown team", `{"name":"bad","team_ids":[999]}`, http.StatusNotFound},
+		{"external team", `{"name":"external","team_ids":[14]}`, http.StatusBadRequest},
+		{"zero uses", `{"name":"zero","max_uses":0}`, http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := adminReq(t, e, http.MethodPost, "/api/v2/admin/invite-links", admin, tc.body)
+			require.Equal(t, tc.status, res.Code, res.Body.String())
+		})
 	}
 	deleted := adminReq(t, e, http.MethodDelete, fmt.Sprintf("/api/v2/admin/invite-links/%d", link.ID), admin, "")
 	require.Equal(t, http.StatusNoContent, deleted.Code, deleted.Body.String())
@@ -131,7 +140,7 @@ func TestHumaInviteLinkRegistrationDisabled(t *testing.T) {
 	defer license.ResetForTests()
 	body := `{"username":"invite-web","email":"invite-web@example.com","password":"12345678"}`
 	regular := adminReq(t, e, http.MethodPost, "/api/v2/register", nil, body)
-	require.GreaterOrEqual(t, regular.Code, http.StatusBadRequest)
+	require.Equal(t, http.StatusUnauthorized, regular.Code, regular.Body.String())
 	res := adminReq(t, e, http.MethodPost, "/api/v2/invite-links/unlimited/register", nil, body)
 	require.Equal(t, http.StatusCreated, res.Code, res.Body.String())
 	u := &user.User{}
