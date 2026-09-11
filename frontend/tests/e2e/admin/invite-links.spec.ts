@@ -15,7 +15,7 @@ test.describe('Invite links', () => {
 	})
 
 	test('admin creates and copies a link, guest registers and joins its team', async ({page, apiContext, browser, baseURL}) => {
-		const [admin] = await UserFactory.create(1, {is_admin: true}, false)
+		const [admin] = await UserFactory.create(1, {is_admin: true, email: 'admin@example.com'}, false)
 		const [team] = await TeamFactory.create(1, {id: 1, name: 'Invited team'}, false)
 		await login(page, apiContext, admin)
 		await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
@@ -45,8 +45,11 @@ test.describe('Invite links', () => {
 			await guestPage.goto(new URL(url).pathname)
 			await expect(guestPage.getByText('You will join: Invited team')).toBeVisible()
 			await guestPage.getByLabel('Username', {exact: true}).fill('invited-guest')
-			await guestPage.getByLabel('Email address', {exact: true}).fill('invited-guest@example.com')
+			await guestPage.getByLabel('Email address', {exact: true}).fill('admin@example.com')
 			await guestPage.locator('#password').fill('12345678')
+			await guestPage.locator('#register-submit').click()
+			await expect(guestPage.getByText('A user with this email address already exists.', {exact: true})).toBeVisible()
+			await guestPage.getByLabel('Email address', {exact: true}).fill('invited-guest@example.com')
 			await guestPage.locator('#register-submit').click()
 			await expect(guestPage).toHaveURL('/')
 			const token = await guestPage.evaluate(() => localStorage.getItem('token'))

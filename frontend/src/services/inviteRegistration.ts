@@ -25,9 +25,12 @@ export default class InviteRegistrationService {
 			const problem = (error as {response?: {data?: VikunjaErrorModel & ValidationError}})?.response?.data
 			if (problem) {
 				problem.message = problem.detail ?? problem.message
-				problem.invalid_fields = (problem.errors ?? []).flatMap(field =>
+				const invalidFields = (problem.errors ?? []).flatMap(field =>
 					field.location?.startsWith('body.') ? [`${field.location.slice(5)}: ${field.message}`] : [],
 				)
+				if (invalidFields.length > 0) {
+					problem.invalid_fields = invalidFields
+				}
 			}
 			throw error
 		}
