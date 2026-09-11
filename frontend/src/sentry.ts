@@ -1,10 +1,22 @@
 import type {App} from 'vue'
 import type {Router} from 'vue-router'
 import {shouldDropEvent} from './helpers/sentryFilters'
+import {isInvitePage, scrubInviteSecrets} from './helpers/sentryPrivacy'
 import {VERSION} from './version.json'
 
 export default async function setupSentry(app: App, router: Router) {
+	const startedOnInvite = isInvitePage(window.location.pathname) || isInvitePage(router.currentRoute.value.path)
 	const Sentry = await import('@sentry/vue')
+	const replay = startedOnInvite || isInvitePage(window.location.pathname) || isInvitePage(router.currentRoute.value.path)
+		? undefined
+		: Sentry.replayIntegration({slowClickTimeout: 0, beforeAddRecordingEvent: scrubInviteSecrets})
+
+	if (replay) {
+		// Replay's initial URL metadata bypasses its recording scrubber.
+		router.beforeEach(async to => {
+			if (isInvitePage(to.path)) await replay.stop({flush: false})
+		})
+	}
 
 	Sentry.init({
 		app,
@@ -18,11 +30,9 @@ export default async function setupSentry(app: App, router: Router) {
 			// Without click detection there are no slow/multi click breadcrumbs, and
 			// so no rage click issues — those are impatience, not bugs, and they
 			// drown out actual errors.
-			Sentry.replayIntegration({slowClickTimeout: 0}),
+			...(replay ? [replay] : []),
 		],
 
-		// vue
-		trackComponents: true,
 
 		// Set tracesSampleRate to 1.0 to capture 100%
 		// of transactions for tracing.
@@ -52,14 +62,19 @@ export default async function setupSentry(app: App, router: Router) {
 		],
 
 
+		beforeBreadcrumb: scrubInviteSecrets,
+		beforeSendSpan: scrubInviteSecrets,
+		beforeSendTransaction: scrubInviteSecrets,
 		beforeSend(event, hint) {
 			if (shouldDropEvent(hint.originalException, event)) {
 				return null
 			}
 
-			return event
+			return scrubInviteSecrets(event)
 		},
 	})
+
+	Sentry.addEventProcessor(scrubInviteSecrets)
 
 	// from https://docs.sentry.io/platforms/javascript/guides/vue/troubleshooting/
 	// under "Capturing resource 404s"
