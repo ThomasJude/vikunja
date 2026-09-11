@@ -129,13 +129,30 @@ func CreateInviteLinkAsAdmin(s *xorm.Session, doer *user.User, body *CreateInvit
 	return link, nil
 }
 
-func loadInviteLinkTeams(s *xorm.Session, link *UserInviteLink) error {
-	link.Teams = []InviteLinkTeam{}
-	err := s.Table("teams").Select("teams.id, teams.name").
+func loadInviteLinkTeams(s *xorm.Session, links ...*UserInviteLink) error {
+	if len(links) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(links))
+	linksByID := make(map[int64]*UserInviteLink, len(links))
+	for _, link := range links {
+		link.Teams = []InviteLinkTeam{}
+		ids = append(ids, link.ID)
+		linksByID[link.ID] = link
+	}
+	var teams []struct {
+		InviteLinkID   int64
+		InviteLinkTeam `xorm:"extends"`
+	}
+	err := s.Table("teams").Select("user_invite_link_teams.invite_link_id, teams.id, teams.name").
 		Join("INNER", "user_invite_link_teams", "teams.id = user_invite_link_teams.team_id").
-		Where(builder.Eq{"user_invite_link_teams.invite_link_id": link.ID}).OrderBy("teams.id ASC").Find(&link.Teams)
+		Where(builder.In("user_invite_link_teams.invite_link_id", ids)).OrderBy("teams.id ASC").Find(&teams)
 	if err != nil {
 		return fmt.Errorf("load invite teams: %w", err)
+	}
+	for _, team := range teams {
+		link := linksByID[team.InviteLinkID]
+		link.Teams = append(link.Teams, team.InviteLinkTeam)
 	}
 	return nil
 }
@@ -160,9 +177,9 @@ func ListInviteLinksAsAdmin(s *xorm.Session, doer *user.User, page, perPage int)
 	}
 	for _, link := range links {
 		link.CreatedBy = creators[link.CreatedByID]
-		if err := loadInviteLinkTeams(s, link); err != nil {
-			return nil, 0, err
-		}
+	}
+	if err := loadInviteLinkTeams(s, links...); err != nil {
+		return nil, 0, err
 	}
 	return links, total, nil
 }

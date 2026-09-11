@@ -17,6 +17,7 @@
 package models
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -33,6 +34,7 @@ import (
 	"code.vikunja.io/api/pkg/utils"
 	"xorm.io/builder"
 	"xorm.io/xorm"
+	xormlog "xorm.io/xorm/log"
 
 	"code.vikunja.io/api/pkg/db"
 	"github.com/stretchr/testify/require"
@@ -163,6 +165,36 @@ func TestInviteLinkAdminListDelete(t *testing.T) {
 	require.NoError(t, s.Commit())
 	events.DispatchPending(context.Background(), s)
 	require.EqualValues(t, 1, singleDispatchedEvent[*AdminInviteLinkDeletedEvent](t).Link.ID)
+}
+
+func TestInviteLinkAdminListTeams(t *testing.T) {
+	s, admin := inviteLinkSetup(t)
+	_, err := s.Insert(&UserInviteLinkTeam{InviteLinkID: 3, TeamID: 8}, &UserInviteLinkTeam{InviteLinkID: 3, TeamID: 1})
+	require.NoError(t, err)
+	_, err = s.Where(builder.Eq{"invite_link_id": 4}).Delete(&UserInviteLinkTeam{})
+	require.NoError(t, err)
+
+	var queries bytes.Buffer
+	logger := s.Engine().Logger()
+	t.Cleanup(func() { s.Engine().SetLogger(logger) })
+	queryLogger := xormlog.NewSimpleLogger(&queries)
+	queryLogger.ShowSQL(true)
+	s.Engine().SetLogger(queryLogger)
+
+	links, total, err := ListInviteLinksAsAdmin(s, admin, 1, 50)
+	require.NoError(t, err)
+	require.Equal(t, 1, strings.Count(queries.String(), "INNER JOIN"), "team associations should load in one query")
+	require.EqualValues(t, 4, total)
+	require.Len(t, links, 4)
+	require.Equal(t, []InviteLinkTeam{}, links[0].Teams)
+	require.Equal(t, []InviteLinkTeam{{ID: 1, Name: "testteam1"}, {ID: 3, Name: "testteam3_write_on_project7"}, {ID: 8, Name: "testteam8"}}, links[1].Teams)
+	require.Equal(t, []InviteLinkTeam{{ID: 2, Name: "testteam2_read_only_on_project6"}}, links[2].Teams)
+	require.Equal(t, []InviteLinkTeam{{ID: 1, Name: "testteam1"}}, links[3].Teams)
+
+	links, total, err = ListInviteLinksAsAdmin(s, admin, 3, 2)
+	require.NoError(t, err)
+	require.EqualValues(t, 4, total)
+	require.Equal(t, []*UserInviteLink{}, links)
 }
 
 func TestInviteLinkAdminMissingCreator(t *testing.T) {
