@@ -469,6 +469,11 @@ const router = createRouter({
 					name: 'admin.projects',
 					component: () => import('@/views/admin/ProjectsView.vue'),
 				},
+				{
+					path: 'invite-links',
+					name: 'admin.inviteLinks',
+					component: () => import('@/views/admin/InviteLinksView.vue'),
+				},
 			],
 		},
 	],
