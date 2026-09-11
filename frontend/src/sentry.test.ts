@@ -43,24 +43,28 @@ afterEach(() => {
 	window.history.replaceState({}, '', '/')
 })
 
+const invitePaths = ['/invite/synthetic-secret', '/Invite/synthetic-secret', '/INVITE/synthetic-secret']
+
 describe('invite telemetry privacy', () => {
-	it.each(['beforeSend', 'beforeSendTransaction', 'beforeSendSpan', 'beforeBreadcrumb'])(
-		'removes invite secrets through %s while preserving other diagnostics',
-		async hook => {
+	it.each(['beforeSend', 'beforeSendTransaction', 'beforeSendSpan', 'beforeBreadcrumb'].flatMap(hook =>
+		invitePaths.map(path => ({hook, path})),
+	))(
+		'removes invite secrets through $hook for $path while preserving other diagnostics',
+		async ({hook, path}) => {
 			const {options} = await initialize()
 			const payload = {
 				message: 'GET https://example.com/api/v2/invite-links/synthetic-secret/register failed',
-				request: {url: 'https://example.com/vikunja/invite/synthetic-secret', headers: {Referer: '/invite/synthetic-secret'}},
+				request: {url: `https://example.com/vikunja${path}`, headers: {Referer: path}},
 				contexts: {vue: {propsData: {inviteToken: 'synthetic-secret'}}},
 				data: {'params.token': 'synthetic-secret', 'url.path.parameter.token': 'synthetic-secret', status_code: 500},
-				breadcrumbs: [{data: {from: '/invite/synthetic-secret', to: '/login'}}],
+				breadcrumbs: [{data: {from: path, to: '/login'}}],
 				spans: [{description: 'GET /api/v2/invite-links/synthetic%2Dsecret', data: {'http.response.status_code': 500}}],
 				extra: {url: '/api/v2/admin/invite-links/42?page=2', count: 3},
 			}
 			expect(options[hook]).toBeTypeOf('function')
 			const filtered = options[hook](payload, {originalException: new Error('unexpected failure')})
 			expect(JSON.stringify(filtered)).not.toContain('synthetic')
-			expect(filtered.request.url).toBe('https://example.com/vikunja/invite/[redacted]')
+			expect(filtered.request.url).toBe(`https://example.com/vikunja${path.replace('synthetic-secret', '[redacted]')}`)
 			expect(filtered.extra).toEqual(payload.extra)
 			expect(filtered.data.status_code).toBe(500)
 			expect(filtered.breadcrumbs[0].data.to).toBe('/login')
@@ -90,29 +94,29 @@ describe('invite telemetry privacy', () => {
 		expect(sdk.init.mock.calls[0][0].integrations).not.toContain(sdk.replay)
 	})
 
-	it('excludes replay when initialized on the invite route', async () => {
-		const {options} = await initialize('/invite/synthetic-secret')
+	it.each(invitePaths)('excludes replay when initialized on %s', async path => {
+		const {options} = await initialize(path)
 		expect(options.integrations).not.toContain(sdk.replay)
 	})
 
-	it('excludes replay for an initial invite URL under a frontend subpath', async () => {
-		window.history.replaceState({}, '', '/vikunja/invite/synthetic-secret')
+	it.each(invitePaths)('excludes replay for %s under a frontend subpath', async path => {
+		window.history.replaceState({}, '', `/vikunja${path}`)
 		const {options} = await initialize()
 		expect(options.integrations).not.toContain(sdk.replay)
 	})
 
-	it('waits for replay to stop before navigating to an invite and never resumes it', async () => {
+	it.each(invitePaths)('stops replay before navigating to %s and never resumes it', async path => {
 		let finishStop!: () => void
 		const stopped = new Promise<void>(resolve => { finishStop = resolve })
 		sdk.replay.stop.mockReturnValue(stopped)
 		const {router, options} = await initialize()
 		expect(options.integrations).toContain(sdk.replay)
-		const navigation = router.push('/invite/synthetic-secret')
+		const navigation = router.push(path)
 		await vi.waitFor(() => expect(sdk.replay.stop).toHaveBeenCalled())
 		expect(router.currentRoute.value.path).toBe('/')
 		finishStop()
 		await navigation
-		expect(router.currentRoute.value.path).toBe('/invite/synthetic-secret')
+		expect(router.currentRoute.value.path).toBe(path)
 		await router.push('/')
 		expect(sdk.replay.stop).toHaveBeenCalledTimes(1)
 		expect(sdk.init).toHaveBeenCalledTimes(1)

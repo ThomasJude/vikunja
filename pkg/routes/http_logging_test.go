@@ -53,6 +53,8 @@ func TestHTTPLoggerRedactsInviteTokens(t *testing.T) {
 		{"/api/v2/invite-links/synthetic-secret", "/api/v2/invite-links/[redacted]"},
 		{"/api/v2/invite-links/synthetic-secret/register?source=email", "/api/v2/invite-links/[redacted]/register?source=email"},
 		{"/invite/synthetic-secret", "/invite/[redacted]"},
+		{"/Invite/synthetic-secret", "/Invite/[redacted]"},
+		{"/vikunja/INVITE/synthetic-secret", "/vikunja/INVITE/[redacted]"},
 		{"/vikunja/invite/synthetic-secret", "/vikunja/invite/[redacted]"},
 		{"/api/v2/invite-links/synthetic%2Dsecret/register", "/api/v2/invite-links/[redacted]/register"},
 		{"/api/v2/invite-links/synthetic%2Fsecret/register", "/api/v2/invite-links/[redacted]/register"},
@@ -97,6 +99,8 @@ func TestSentryMiddlewareRedactsInviteTokens(t *testing.T) {
 		"/api/v2/invite-links/synthetic-secret/register",
 		"/api/v2/invite-links/synthetic%2Fsecret/register",
 		"/vikunja/%69nvite/synthetic-secret",
+		"/Invite/synthetic-secret",
+		"/vikunja/INVITE/synthetic-secret",
 	} {
 		scope := sentry.NewScope()
 		hub := sentry.NewHub(nil, scope)
@@ -104,13 +108,13 @@ func TestSentryMiddlewareRedactsInviteTokens(t *testing.T) {
 		e.Use(SentryMiddleware(SentryOptions{}))
 		e.Any("/*", func(c *echo.Context) error {
 			assert.Equal(t, uri, c.Request().RequestURI)
-			assert.Equal(t, "http://example.com/invite/synthetic-secret", c.Request().Header.Get("Referer"))
+			assert.Equal(t, "http://example.com/InViTe/synthetic-secret", c.Request().Header.Get("Referer"))
 			assert.Equal(t, "http://example.com"+uri, c.Request().URL.String())
 			return c.NoContent(http.StatusNoContent)
 		})
 		request := httptest.NewRequest(http.MethodGet, "http://example.com"+uri, nil)
 		request.RequestURI = uri
-		request.Header.Set("Referer", "http://example.com/invite/synthetic-secret")
+		request.Header.Set("Referer", "http://example.com/InViTe/synthetic-secret")
 		request = request.WithContext(sentry.SetHubOnContext(request.Context(), hub))
 		response := httptest.NewRecorder()
 		e.ServeHTTP(response, request)
@@ -119,6 +123,6 @@ func TestSentryMiddlewareRedactsInviteTokens(t *testing.T) {
 		require.NotNil(t, event.Request)
 		assert.NotContains(t, event.Request.URL, "synthetic")
 		assert.Contains(t, event.Request.URL, "redacted")
-		assert.Equal(t, "http://example.com/invite/[redacted]", event.Request.Headers["Referer"])
+		assert.Equal(t, "http://example.com/InViTe/[redacted]", event.Request.Headers["Referer"])
 	}
 }

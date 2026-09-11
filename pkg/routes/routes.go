@@ -1090,7 +1090,7 @@ func redactInviteURI(uri string) string {
 	}
 	for i := 0; i+1 < len(segments); i++ {
 		isAPIInvite := i >= 2 && decoded[i-2] == "api" && decoded[i-1] == "v2" && decoded[i] == "invite-links"
-		if (decoded[i] == "invite" || isAPIInvite) && segments[i+1] != "" {
+		if (strings.EqualFold(decoded[i], "invite") || isAPIInvite) && segments[i+1] != "" {
 			segments[i+1] = "[redacted]"
 		}
 	}

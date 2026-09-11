@@ -1,7 +1,7 @@
-const INVITE_URL = /(\/(?:api\/v2\/invite-links|invite)\/)[^/?#\s"'<>]+/g
+const INVITE_URL = /(\/(?:api\/v2\/invite-links|invite)\/)[^/?#\s"'<>]+/gi
 
 export function isInvitePage(path: string): boolean {
-	return /(?:^|\/)invite\/[^/?#]+/.test(path)
+	return /(?:^|\/)invite\/[^/?#]+/i.test(path)
 }
 
 export function scrubInviteSecrets<T>(payload: T): T {
