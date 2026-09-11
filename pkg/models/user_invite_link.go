@@ -44,6 +44,7 @@ type UserInviteLink struct {
 	ExpiresAt        *time.Time       `xorm:"datetime null" json:"expires_at" doc:"Null means no expiry."`
 	SkipEmailConfirm bool             `xorm:"not null default false" json:"skip_email_confirm" doc:"Activate invitees without confirming their email."`
 	CreatedByID      int64            `xorm:"bigint not null index" json:"created_by_id" doc:"ID of the admin who created this link."`
+	CreatedBy        *user.User       `xorm:"-" json:"created_by" readOnly:"true" doc:"The admin who created this link; null if their account was deleted."`
 	Created          time.Time        `xorm:"created not null" json:"created" doc:"Creation timestamp."`
 	Updated          time.Time        `xorm:"updated not null" json:"updated" doc:"Last update timestamp."`
 	Teams            []InviteLinkTeam `xorm:"-" json:"teams" doc:"Teams the invitee will join."`
@@ -109,6 +110,10 @@ func CreateInviteLinkAsAdmin(s *xorm.Session, doer *user.User, body *CreateInvit
 		return nil, fmt.Errorf("generate invite token: %w", err)
 	}
 	link := &UserInviteLink{Name: name, TokenHash: utils.Sha256Hex(token), MaxUses: body.MaxUses, ExpiresAt: body.ExpiresAt, SkipEmailConfirm: body.SkipEmailConfirm, CreatedByID: doer.ID, Teams: teams}
+	link.CreatedBy, err = user.GetUserByID(s, doer.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load invite creator: %w", err)
+	}
 	if _, err := s.Insert(link); err != nil {
 		return nil, fmt.Errorf("create invite link: %w", err)
 	}
@@ -145,7 +150,16 @@ func ListInviteLinksAsAdmin(s *xorm.Session, doer *user.User, page, perPage int)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list invite links: %w", err)
 	}
+	creatorIDs := make([]int64, 0, len(links))
 	for _, link := range links {
+		creatorIDs = append(creatorIDs, link.CreatedByID)
+	}
+	creators, err := user.GetUsersByIDs(s, creatorIDs)
+	if err != nil {
+		return nil, 0, fmt.Errorf("load invite creators: %w", err)
+	}
+	for _, link := range links {
+		link.CreatedBy = creators[link.CreatedByID]
 		if err := loadInviteLinkTeams(s, link); err != nil {
 			return nil, 0, err
 		}

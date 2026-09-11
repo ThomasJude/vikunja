@@ -70,6 +70,9 @@ func TestInviteLinkAdminCreate(t *testing.T) {
 	require.Len(t, link.ClearTextToken, 64)
 	require.Equal(t, utils.Sha256Hex(link.ClearTextToken), link.TokenHash)
 	require.Len(t, link.Teams, 2)
+	require.NotNil(t, link.CreatedBy)
+	require.Equal(t, "user1", link.CreatedBy.Username)
+	require.Empty(t, link.CreatedBy.Email)
 	stored := &UserInviteLink{}
 	found, err := s.ID(link.ID).Get(stored)
 	require.NoError(t, err)
@@ -141,6 +144,17 @@ func TestInviteLinkAdminListDelete(t *testing.T) {
 	data, err := json.Marshal(links)
 	require.NoError(t, err)
 	require.NotContains(t, string(data), "token")
+	var response []struct {
+		CreatedBy *user.User `json:"created_by"`
+	}
+	require.NoError(t, json.Unmarshal(data, &response))
+	for _, item := range response {
+		require.NotNil(t, item.CreatedBy)
+		require.EqualValues(t, 1, item.CreatedBy.ID)
+		require.Equal(t, "user1", item.CreatedBy.Username)
+		require.Empty(t, item.CreatedBy.Email)
+	}
+
 	require.NoError(t, DeleteInviteLinkAsAdmin(s, admin, 1))
 	n, err := s.Where(builder.Eq{"invite_link_id": 1}).Count(&UserInviteLinkTeam{})
 	require.NoError(t, err)
@@ -149,6 +163,18 @@ func TestInviteLinkAdminListDelete(t *testing.T) {
 	require.NoError(t, s.Commit())
 	events.DispatchPending(context.Background(), s)
 	require.EqualValues(t, 1, singleDispatchedEvent[*AdminInviteLinkDeletedEvent](t).Link.ID)
+}
+
+func TestInviteLinkAdminMissingCreator(t *testing.T) {
+	s, admin := inviteLinkSetup(t)
+	_, err := s.ID(4).Cols("created_by_id").Update(&UserInviteLink{CreatedByID: 999})
+	require.NoError(t, err)
+	links, total, err := ListInviteLinksAsAdmin(s, admin, 1, 50)
+	require.NoError(t, err)
+	require.EqualValues(t, 4, total)
+	require.EqualValues(t, 4, links[0].ID)
+	require.Nil(t, links[0].CreatedBy)
+	require.NotNil(t, links[1].CreatedBy)
 }
 
 func TestInviteLinkAdminTeams(t *testing.T) {
