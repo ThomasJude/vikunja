@@ -15,7 +15,7 @@ test.describe('Invite links', () => {
 	})
 
 	test('admin creates and copies a link, guest registers and joins its team', async ({page, apiContext, browser, baseURL}) => {
-		const [admin] = await UserFactory.create(1, {is_admin: true, email: 'admin@example.com'}, false)
+		const [admin] = await UserFactory.create(1, {is_admin: true, email: 'admin@example.com', name: 'Invite Admin'}, false)
 		const [team] = await TeamFactory.create(1, {id: 1, name: 'Invited team'}, false)
 		await login(page, apiContext, admin)
 		await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
@@ -34,6 +34,12 @@ test.describe('Invite links', () => {
 		await page.getByRole('button', {name: 'Close', exact: true}).last().click()
 		await page.reload()
 		await expect(page.getByLabel('Invite link', {exact: true})).not.toBeVisible()
+		const inviteRow = page.getByRole('row').filter({hasText: 'Welcome aboard'})
+		await expect(inviteRow).toBeVisible()
+		const creator = inviteRow.getByRole('cell').nth(4)
+		await expect(creator).toHaveText('Invite Admin')
+		await expect(creator.locator('img')).toBeVisible()
+		await expect.poll(() => creator.locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true)
 		await page.evaluate(() => localStorage.removeItem('token'))
 		await page.context().clearCookies()
 

@@ -45,7 +45,16 @@
 								{{ $t('admin.inviteLinks.neverExpires') }}
 							</template>
 						</td>
-						<td>#{{ link.createdById }}</td>
+						<td>
+							<User
+								v-if="link.createdBy"
+								:user="link.createdBy"
+								:avatar-size="24"
+							/>
+							<template v-else>
+								#{{ link.createdById }}
+							</template>
+						</td>
 						<td>
 							<TimeDisplay
 								v-if="link.created"
@@ -198,6 +207,7 @@ import FormInput from '@/components/input/FormInput.vue'
 import FormCheckbox from '@/components/input/FormCheckbox.vue'
 import Multiselect from '@/components/input/Multiselect.vue'
 import TimeDisplay from '@/components/misc/TimeDisplay.vue'
+import User from '@/components/misc/User.vue'
 import PaginationEmit from '@/components/misc/PaginationEmit.vue'
 import AdminInviteLinkService from '@/services/admin/inviteLinkService'
 import AdminTeamService from '@/services/admin/teamService'
