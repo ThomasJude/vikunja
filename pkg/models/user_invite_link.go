@@ -16,7 +16,19 @@
 
 package models
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"code.vikunja.io/api/pkg/events"
+	"code.vikunja.io/api/pkg/license"
+	"code.vikunja.io/api/pkg/user"
+	"code.vikunja.io/api/pkg/utils"
+	"xorm.io/builder"
+	"xorm.io/xorm"
+)
 
 type InviteLinkTeam struct {
 	ID   int64  `json:"id" doc:"Numeric team ID."`
@@ -48,3 +60,117 @@ type UserInviteLinkTeam struct {
 }
 
 func (UserInviteLinkTeam) TableName() string { return "user_invite_link_teams" }
+
+type CreateInviteLinkBody struct {
+	Name             string     `json:"name" maxLength:"250" doc:"Name shown to admins and invitees."`
+	TeamIDs          []int64    `json:"team_ids" doc:"Local teams the invitees will join."`
+	MaxUses          *int64     `json:"max_uses" doc:"Null allows unlimited registrations."`
+	ExpiresAt        *time.Time `json:"expires_at" doc:"Null means no expiry."`
+	SkipEmailConfirm bool       `json:"skip_email_confirm" doc:"Activate accounts without confirming email."`
+}
+
+func requireInviteLinkAdmin(s *xorm.Session, doer *user.User) error {
+	if doer == nil || !license.IsFeatureEnabled(license.FeatureUserInvites) || !isInstanceAdmin(s, doer) {
+		return ErrInviteLinkInvalid{}
+	}
+	return nil
+}
+
+func CreateInviteLinkAsAdmin(s *xorm.Session, doer *user.User, body *CreateInviteLinkBody) (*UserInviteLink, error) {
+	if err := requireInviteLinkAdmin(s, doer); err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" || utf8.RuneCountInString(name) > 250 || (body.MaxUses != nil && *body.MaxUses < 1) || (body.ExpiresAt != nil && !body.ExpiresAt.After(time.Now())) {
+		return nil, ErrInvalidInviteLinkInput{}
+	}
+	teams := make([]InviteLinkTeam, 0, len(body.TeamIDs))
+	seen := make(map[int64]bool, len(body.TeamIDs))
+	for _, id := range body.TeamIDs {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		team := &Team{}
+		found, err := s.ID(id).Get(team)
+		if err != nil {
+			return nil, fmt.Errorf("load invite team: %w", err)
+		}
+		if !found {
+			return nil, ErrTeamDoesNotExist{TeamID: id}
+		}
+		if team.ExternalID != "" {
+			return nil, ErrInviteLinkExternalTeam{}
+		}
+		teams = append(teams, InviteLinkTeam{ID: team.ID, Name: team.Name})
+	}
+	token, err := utils.CryptoRandomString(64)
+	if err != nil {
+		return nil, fmt.Errorf("generate invite token: %w", err)
+	}
+	link := &UserInviteLink{Name: name, TokenHash: utils.Sha256Hex(token), MaxUses: body.MaxUses, ExpiresAt: body.ExpiresAt, SkipEmailConfirm: body.SkipEmailConfirm, CreatedByID: doer.ID, Teams: teams}
+	if _, err := s.Insert(link); err != nil {
+		return nil, fmt.Errorf("create invite link: %w", err)
+	}
+	for _, team := range teams {
+		if _, err := s.Insert(&UserInviteLinkTeam{InviteLinkID: link.ID, TeamID: team.ID}); err != nil {
+			return nil, fmt.Errorf("attach invite team: %w", err)
+		}
+	}
+	// Audit events must never carry the clear token.
+	auditLink := *link
+	events.DispatchOnCommit(s, &AdminInviteLinkCreatedEvent{Link: &auditLink, Doer: doer})
+	link.ClearTextToken = token
+	return link, nil
+}
+
+func loadInviteLinkTeams(s *xorm.Session, link *UserInviteLink) error {
+	link.Teams = []InviteLinkTeam{}
+	err := s.Table("teams").Select("teams.id, teams.name").
+		Join("INNER", "user_invite_link_teams", "teams.id = user_invite_link_teams.team_id").
+		Where(builder.Eq{"user_invite_link_teams.invite_link_id": link.ID}).OrderBy("teams.id ASC").Find(&link.Teams)
+	if err != nil {
+		return fmt.Errorf("load invite teams: %w", err)
+	}
+	return nil
+}
+
+func ListInviteLinksAsAdmin(s *xorm.Session, doer *user.User, page, perPage int) ([]*UserInviteLink, int64, error) {
+	if err := requireInviteLinkAdmin(s, doer); err != nil {
+		return nil, 0, err
+	}
+	limit, start := getLimitFromPageIndex(page, perPage)
+	links := []*UserInviteLink{}
+	total, err := s.Limit(limit, start).OrderBy("id DESC").FindAndCount(&links)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list invite links: %w", err)
+	}
+	for _, link := range links {
+		if err := loadInviteLinkTeams(s, link); err != nil {
+			return nil, 0, err
+		}
+	}
+	return links, total, nil
+}
+
+func DeleteInviteLinkAsAdmin(s *xorm.Session, doer *user.User, id int64) error {
+	if err := requireInviteLinkAdmin(s, doer); err != nil {
+		return err
+	}
+	link := &UserInviteLink{}
+	found, err := s.ID(id).Get(link)
+	if err != nil {
+		return fmt.Errorf("load invite link: %w", err)
+	}
+	if !found {
+		return ErrInviteLinkDoesNotExist{}
+	}
+	if _, err := s.Where(builder.Eq{"invite_link_id": id}).Delete(&UserInviteLinkTeam{}); err != nil {
+		return fmt.Errorf("delete invite teams: %w", err)
+	}
+	if _, err := s.ID(id).Delete(&UserInviteLink{}); err != nil {
+		return fmt.Errorf("delete invite link: %w", err)
+	}
+	events.DispatchOnCommit(s, &AdminInviteLinkDeletedEvent{Link: link, Doer: doer})
+	return nil
+}
