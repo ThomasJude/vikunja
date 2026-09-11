@@ -2852,3 +2852,47 @@ func (err ErrUserDataExportDoesNotExist) HTTPError() web.HTTPError {
 		Message:  "No user data export found.",
 	}
 }
+
+type ErrInviteLinkInvalid struct{}
+
+func (err ErrInviteLinkInvalid) Error() string { return "This invite link is invalid or expired." }
+
+const ErrCodeInviteLinkInvalid = 20001
+
+func (err ErrInviteLinkInvalid) HTTPError() web.HTTPError {
+	return web.HTTPError{HTTPCode: http.StatusNotFound, Code: ErrCodeInviteLinkInvalid, Message: err.Error()}
+}
+
+type ErrInviteLinkDoesNotExist struct{}
+
+func (err ErrInviteLinkDoesNotExist) Error() string { return "This invite link does not exist." }
+
+const ErrCodeInviteLinkDoesNotExist = 20002
+
+func (err ErrInviteLinkDoesNotExist) HTTPError() web.HTTPError {
+	return web.HTTPError{HTTPCode: http.StatusNotFound, Code: ErrCodeInviteLinkDoesNotExist, Message: err.Error()}
+}
+
+type ErrInvalidInviteLinkInput struct{}
+
+func (err ErrInvalidInviteLinkInput) Error() string {
+	return "Invite links require a name of 1–250 characters, a positive maximum use count and a future expiry."
+}
+
+const ErrCodeInvalidInviteLinkInput = 20003
+
+func (err ErrInvalidInviteLinkInput) HTTPError() web.HTTPError {
+	return web.HTTPError{HTTPCode: http.StatusBadRequest, Code: ErrCodeInvalidInviteLinkInput, Message: err.Error()}
+}
+
+type ErrInviteLinkExternalTeam struct{}
+
+func (err ErrInviteLinkExternalTeam) Error() string {
+	return "Externally managed teams cannot be attached to an invite link."
+}
+
+const ErrCodeInviteLinkExternalTeam = 20004
+
+func (err ErrInviteLinkExternalTeam) HTTPError() web.HTTPError {
+	return web.HTTPError{HTTPCode: http.StatusBadRequest, Code: ErrCodeInviteLinkExternalTeam, Message: err.Error()}
+}
