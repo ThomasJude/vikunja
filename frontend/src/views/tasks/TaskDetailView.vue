@@ -1072,9 +1072,10 @@ const activeFieldComponents: { [id in FieldType]: FieldComponentApi | null } = r
 	reminders: null,
 	repeatAfter: null,
 	startDate: null,
+	timeTracking: null,
 })
 
-function setFieldRef(name, e) {
+function setFieldRef(name: FieldType, e) {
 	activeFieldComponents[name] = e
 	activeFieldElements[name] = unrefElement(e)
 }
