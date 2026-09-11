@@ -1085,8 +1085,8 @@ function setFieldActive(fieldName: keyof typeof activeFields) {
 
 		el.focus()
 
-		// scroll the field to the center of the screen if not in viewport already
-		scrollIntoView(el)
+		// Finish scrolling before the datepicker sheet locks the page.
+		scrollIntoView(el, datepicker ? 'instant' : 'smooth')
 
 		// setTimeout(..., 0) is preventing the *original* click to open a field from also being
 		// detected as an outside click and immediately closing the popup.
