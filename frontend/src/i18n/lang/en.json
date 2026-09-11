@@ -105,7 +105,10 @@
       "registrationDisabled": "Registration is disabled.",
       "passwordResetTokenMissing": "Password reset token is missing.",
       "registrationFailed": "An error occurred during registration. Please check your input and try again.",
-      "registrationConfirmEmail": "Your account was created successfully! Please check your inbox and click the link in the confirmation email before logging in."
+      "registrationConfirmEmail": "Your account was created successfully! Please check your inbox and click the link in the confirmation email before logging in.",
+      "inviteInvalid": "This invite link is invalid or expired.",
+      "inviteLoadFailed": "Could not load this invitation. Please try again.",
+      "inviteTeams": "You will join: {teams}"
     },
     "settings": {
       "bots": {
@@ -1455,6 +1458,10 @@
     "add": "Add your reaction"
   },
   "error": {
+    "20001": "This invite link is invalid or expired.",
+    "20002": "This invite link does not exist.",
+    "20003": "Enter a link name, a positive maximum use count, and an expiry in the future, or leave the limits blank.",
+    "20004": "Externally managed teams cannot be attached to an invite link.",
     "error": "Error",
     "success": "Success",
     "0001": "You're not allowed to do that.",
@@ -1665,6 +1672,29 @@
       "reassignTitle": "Reassign {title}",
       "reassignedSuccess": "Project owner reassigned.",
       "newOwnerLabel": "New owner"
+    },
+    "inviteLinks": {
+      "title": "Invite links",
+      "create": "Create invite link",
+      "name": "Link name",
+      "teams": "Teams to join",
+      "maxUses": "Maximum uses",
+      "unlimited": "Unlimited",
+      "uses": "Uses",
+      "expiresAt": "Expires at",
+      "neverExpires": "Never expires",
+      "createdBy": "Created by",
+      "skipEmailConfirm": "Skip email confirmation",
+      "shownOnce": "This link is shown only once. Copy it before closing this window.",
+      "url": "Invite link",
+      "copy": "Copy link",
+      "copied": "Link copied",
+      "delete": "Delete invite link",
+      "deleteConfirm": "Delete “{name}”? People will no longer be able to register with this link. Existing accounts will stay active.",
+      "deleted": "Invite link deleted.",
+      "empty": "No invite links yet. Create a link to invite people to this instance.",
+      "created": "Invite link created.",
+      "futureExpiry": "Choose an expiry in the future."
     }
   }
 }

@@ -6,6 +6,7 @@ import {getBrowserLanguage, i18n, setLanguage} from '@/i18n'
 import {objectToSnakeCase} from '@/helpers/case'
 import UserModel, {getDisplayName, invalidateAvatarCache} from '@/models/user'
 import AvatarService from '@/services/avatar'
+import InviteRegistrationService, {type InviteRegistrationCredentials} from '@/services/inviteRegistration'
 import UserSettingsService from '@/services/userSettings'
 import {getToken, refreshToken, removeToken, saveToken} from '@/helpers/auth'
 import {clearTaskCache} from '@/helpers/taskCache'
@@ -238,7 +239,7 @@ export const useAuthStore = defineStore('auth', () => {
 	 * Registers a new user and logs them in.
 	 * Not sure if this is the right place to put the logic in, maybe a separate js component would be better suited. 
 	 */
-	async function register(credentials, language: string|null = null) {
+	async function register(credentials, language: string|null = null, inviteToken?: string) {
 		const HTTP = HTTPFactory()
 		setIsLoading(true)
 		
@@ -247,14 +248,15 @@ export const useAuthStore = defineStore('auth', () => {
 		}
 		
 		try {
-			await HTTP.post('register', {
-				...credentials,
-				language,
-			})
+			if (inviteToken) {
+				await new InviteRegistrationService().register(inviteToken, {...credentials, language})
+			} else {
+				await HTTP.post('register', {...credentials, language})
+			}
 			return await login(credentials)
 		} catch (e) {
 			if (e.response?.data?.code === 2002 && e.response?.data?.invalid_fields[0]?.startsWith('language:')) {
-				return register(credentials, 'en')
+				return register(credentials, 'en', inviteToken)
 			}
 
 			if (e.response?.data?.message) {
@@ -265,6 +267,10 @@ export const useAuthStore = defineStore('auth', () => {
 		} finally {
 			setIsLoading(false)
 		}
+	}
+
+	function registerWithInvite(credentials: InviteRegistrationCredentials, token: string) {
+		return register(credentials, null, token)
 	}
 
 	async function openIdAuth({provider, code, totpPasscode}: {provider: string, code: string, totpPasscode?: string}) {
@@ -631,6 +637,7 @@ export const useAuthStore = defineStore('auth', () => {
 
 		login,
 		register,
+		registerWithInvite,
 		openIdAuth,
 		handleDesktopOAuthTokens,
 		linkShareAuth,
