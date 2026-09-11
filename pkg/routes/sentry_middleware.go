@@ -19,6 +19,7 @@ package routes
 import (
 	"context"
 	"net/http"
+	"net/url"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/labstack/echo/v5"
@@ -43,8 +44,15 @@ func SentryMiddleware(options SentryOptions) echo.MiddlewareFunc {
 				hub = sentry.CurrentHub().Clone()
 			}
 
+			eventRequest := c.Request().Clone(c.Request().Context())
+			eventRequest.URL.Path, _ = url.PathUnescape(redactInviteURI(eventRequest.URL.EscapedPath()))
+			eventRequest.URL.RawPath = ""
+			eventRequest.RequestURI = redactInviteURI(eventRequest.RequestURI)
+			if referer := eventRequest.Header.Get("Referer"); referer != "" {
+				eventRequest.Header.Set("Referer", redactInviteURI(referer))
+			}
 			scope := hub.Scope()
-			scope.SetRequest(c.Request())
+			scope.SetRequest(eventRequest)
 			scope.SetRequestBody(nil) // We don't want to log request bodies
 
 			// Store hub in context
@@ -54,7 +62,7 @@ func SentryMiddleware(options SentryOptions) echo.MiddlewareFunc {
 			defer func() {
 				if err := recover(); err != nil {
 					eventID := hub.RecoverWithContext(
-						context.WithValue(c.Request().Context(), sentry.RequestContextKey, c.Request()),
+						context.WithValue(c.Request().Context(), sentry.RequestContextKey, eventRequest),
 						err,
 					)
 					if eventID != nil && options.Repanic {

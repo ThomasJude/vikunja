@@ -54,6 +54,7 @@ package routes
 import (
 	"context"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -162,7 +163,7 @@ func NewEcho() *echo.Echo {
 				attrs := []slog.Attr{
 					slog.String("remote_ip", v.RemoteIP),
 					slog.String("method", v.Method),
-					slog.String("uri", v.URI),
+					slog.String("uri", redactInviteURI(v.URI)),
 					slog.Int("status", v.Status),
 					slog.Duration("latency", v.Latency),
 					slog.String("user_agent", v.UserAgent),
@@ -1075,4 +1076,23 @@ func httpLogLevel(status int) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func redactInviteURI(uri string) string {
+	pathEnd := strings.IndexByte(uri, '?')
+	if pathEnd < 0 {
+		pathEnd = len(uri)
+	}
+	segments := strings.Split(uri[:pathEnd], "/")
+	decoded := make([]string, len(segments))
+	for i, segment := range segments {
+		decoded[i], _ = url.PathUnescape(segment)
+	}
+	for i := 0; i+1 < len(segments); i++ {
+		isAPIInvite := i >= 2 && decoded[i-2] == "api" && decoded[i-1] == "v2" && decoded[i] == "invite-links"
+		if (decoded[i] == "invite" || isAPIInvite) && segments[i+1] != "" {
+			segments[i+1] = "[redacted]"
+		}
+	}
+	return strings.Join(segments, "/") + uri[pathEnd:]
 }
