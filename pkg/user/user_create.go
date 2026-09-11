@@ -22,7 +22,6 @@ import (
 
 	"code.vikunja.io/api/pkg/config"
 	"code.vikunja.io/api/pkg/events"
-	"code.vikunja.io/api/pkg/notifications"
 	"golang.org/x/crypto/bcrypt"
 	"xorm.io/xorm"
 )
@@ -32,8 +31,12 @@ const (
 	IssuerLDAP  = `ldap`
 )
 
+type CreateUserOptions struct {
+	SkipEmailConfirm bool
+}
+
 // CreateUser creates a new user and inserts it into the database
-func CreateUser(s *xorm.Session, user *User) (newUser *User, err error) {
+func CreateUser(s *xorm.Session, user *User, options ...CreateUserOptions) (newUser *User, err error) {
 
 	if user.Issuer == "" {
 		user.Issuer = IssuerLocal
@@ -93,7 +96,7 @@ func CreateUser(s *xorm.Session, user *User) (newUser *User, err error) {
 	})
 
 	// Don't send a mail if no mailer is configured
-	if !config.MailerEnabled.GetBool() || user.Issuer != IssuerLocal {
+	if !config.MailerEnabled.GetBool() || user.Issuer != IssuerLocal || (len(options) > 0 && options[0].SkipEmailConfirm) {
 		return newUserOut, err
 	}
 
@@ -111,13 +114,7 @@ func CreateUser(s *xorm.Session, user *User) (newUser *User, err error) {
 		return
 	}
 
-	n := &EmailConfirmNotification{
-		User:         user,
-		IsNew:        true,
-		ConfirmToken: token.ClearTextToken,
-	}
-
-	err = notifications.Notify(user, n, s)
+	events.DispatchOnCommit(s, &EmailConfirmationRequestedEvent{User: user, Token: token.ClearTextToken})
 	// Callers passing a stale status to UpdateUser would silently reactivate the account.
 	newUserOut.Status = StatusEmailConfirmationRequired
 	return newUserOut, err
