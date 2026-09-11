@@ -23,31 +23,38 @@ import (
 	"code.vikunja.io/api/pkg/config"
 	"code.vikunja.io/api/pkg/db"
 	"code.vikunja.io/api/pkg/events"
-	"code.vikunja.io/api/pkg/notifications"
+	"code.vikunja.io/api/pkg/i18n"
+	"code.vikunja.io/api/pkg/mail"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCreateUserConfirmationDeferred(t *testing.T) {
+	i18n.Init()
 	for _, tc := range []struct {
 		name           string
+		language       string
+		welcome        string
 		skip, rollback bool
 	}{
-		{name: "skip", skip: true}, {name: "confirm"}, {name: "rollback", rollback: true},
+		{name: "skip", skip: true},
+		{name: "confirm", language: "en", welcome: "Welcome to Vikunja!"},
+		{name: "localized", language: "de-DE", welcome: "Willkommen bei Vikunja!"},
+		{name: "rollback", rollback: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db.LoadAndAssertFixtures(t)
 			oldMailer := config.MailerEnabled.GetBool()
 			config.MailerEnabled.Set(true)
 			t.Cleanup(func() { config.MailerEnabled.Set(oldMailer) })
-			notifications.Fake()
-			t.Cleanup(notifications.Unfake)
+			mail.Fake()
+			t.Cleanup(mail.ResetSent)
 			events.Fake()
 			s := db.NewSession()
 			defer s.Close()
 			defer events.CleanupPending(s)
-			created, err := CreateUser(s, &User{Username: "invite-new", Email: "invite-new@example.com", Password: "12345678"}, CreateUserOptions{SkipEmailConfirm: tc.skip})
+			created, err := CreateUser(s, &User{Username: "invite-new", Email: "invite-new@example.com", Password: "12345678", Language: tc.language}, CreateUserOptions{SkipEmailConfirm: tc.skip})
 			require.NoError(t, err)
-			notifications.AssertNotSent(t, &EmailConfirmNotification{})
+			require.Nil(t, mail.LastSent())
 			count, err := s.Where("user_id = ? AND kind = ?", created.ID, TokenEmailConfirm).Count(&Token{})
 			require.NoError(t, err)
 			if tc.skip {
@@ -71,14 +78,18 @@ func TestCreateUserConfirmationDeferred(t *testing.T) {
 			} else {
 				require.NoError(t, s.Commit())
 			}
-			events.DispatchPending(context.Background(), s)
-			dispatched := events.GetDispatchedEvents((&EmailConfirmationRequestedEvent{}).Name())
 			if tc.skip || tc.rollback {
-				require.Empty(t, dispatched)
+				require.Empty(t, mail.SentMails())
 			} else {
-				require.Len(t, dispatched, 1)
-				events.TestListener(t, dispatched[0], &SendEmailConfirmation{})
-				notifications.AssertSent(t, &EmailConfirmNotification{})
+				require.Len(t, mail.SentMails(), 1, "confirmation must be queued before Commit returns")
+				sent := mail.LastSent()
+				require.Equal(t, "invite-new@example.com", sent.To)
+				require.Contains(t, sent.Message, tc.welcome)
+				require.Contains(t, sent.Message, "userEmailConfirm=")
+			}
+			events.DispatchPending(context.Background(), s)
+			if !tc.rollback {
+				require.Equal(t, 1, events.CountDispatchedEvents((&CreatedEvent{}).Name()))
 			}
 		})
 	}

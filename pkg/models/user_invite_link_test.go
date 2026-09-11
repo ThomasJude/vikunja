@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"code.vikunja.io/api/pkg/config"
-	"code.vikunja.io/api/pkg/notifications"
+	"code.vikunja.io/api/pkg/mail"
 
 	"code.vikunja.io/api/pkg/events"
 	"code.vikunja.io/api/pkg/license"
@@ -310,24 +310,21 @@ func TestInviteLinkConfirmation(t *testing.T) {
 			oldMailer := config.MailerEnabled.GetBool()
 			config.MailerEnabled.Set(true)
 			t.Cleanup(func() { config.MailerEnabled.Set(oldMailer) })
-			notifications.Fake()
-			t.Cleanup(notifications.Unfake)
+			mail.Fake()
+			t.Cleanup(mail.ResetSent)
 			link, err := CreateInviteLinkAsAdmin(s, admin, &CreateInviteLinkBody{Name: "confirm", SkipEmailConfirm: skip})
 			require.NoError(t, err)
 			created, err := RegisterUserViaInviteLink(s, link.ClearTextToken, &user.User{Username: "confirm-invite", Email: "confirm-invite@example.com", Password: "12345678"})
 			require.NoError(t, err)
-			notifications.AssertNotSent(t, &user.EmailConfirmNotification{})
+			require.Nil(t, mail.LastSent())
 			require.NoError(t, s.Commit())
-			events.DispatchPending(context.Background(), s)
-			dispatched := events.GetDispatchedEvents((&user.EmailConfirmationRequestedEvent{}).Name())
 			if skip {
 				require.Equal(t, user.StatusActive, created.Status)
-				require.Empty(t, dispatched)
+				require.Empty(t, mail.SentMails())
 			} else {
 				require.Equal(t, user.StatusEmailConfirmationRequired, created.Status)
-				require.Len(t, dispatched, 1)
-				events.TestListener(t, dispatched[0], &user.SendEmailConfirmation{})
-				notifications.AssertSent(t, &user.EmailConfirmNotification{})
+				require.Len(t, mail.SentMails(), 1, "confirmation must be queued before Commit returns")
+				require.Equal(t, "confirm-invite@example.com", mail.LastSent().To)
 			}
 		})
 	}

@@ -22,6 +22,8 @@ import (
 
 	"code.vikunja.io/api/pkg/config"
 	"code.vikunja.io/api/pkg/events"
+	"code.vikunja.io/api/pkg/log"
+	"code.vikunja.io/api/pkg/notifications"
 	"golang.org/x/crypto/bcrypt"
 	"xorm.io/xorm"
 )
@@ -106,7 +108,15 @@ func CreateUser(s *xorm.Session, user *User, options ...CreateUserOptions) (newU
 		return nil, err
 	}
 
+	confirmationUser := *user
+	confirmation := &EmailConfirmNotification{User: &confirmationUser, IsNew: true, ConfirmToken: token.ClearTextToken}
 	_, err = s.
+		After(func(_ any) {
+			// XORM runs this after commit, before the CLI can stop the mail daemon.
+			if notifyErr := notifications.Notify(&confirmationUser, confirmation); notifyErr != nil {
+				log.Errorf("Failed to queue email confirmation for user %d: %v", confirmationUser.ID, notifyErr)
+			}
+		}).
 		Where("id = ?", user.ID).
 		Cols("email", "status").
 		Update(user)
@@ -114,7 +124,6 @@ func CreateUser(s *xorm.Session, user *User, options ...CreateUserOptions) (newU
 		return
 	}
 
-	events.DispatchOnCommit(s, &EmailConfirmationRequestedEvent{User: user, Token: token.ClearTextToken})
 	// Callers passing a stale status to UpdateUser would silently reactivate the account.
 	newUserOut.Status = StatusEmailConfirmationRequired
 	return newUserOut, err
