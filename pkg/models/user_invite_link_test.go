@@ -19,9 +19,13 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"code.vikunja.io/api/pkg/config"
+	"code.vikunja.io/api/pkg/notifications"
 
 	"code.vikunja.io/api/pkg/events"
 	"code.vikunja.io/api/pkg/license"
@@ -167,4 +171,138 @@ func TestInviteLinkAdminTeams(t *testing.T) {
 	n, err := s.Where(builder.Eq{"team_id": 1}).Count(&UserInviteLinkTeam{})
 	require.NoError(t, err)
 	require.Zero(t, n)
+}
+
+func TestInviteLinkRegistration(t *testing.T) {
+	s, _ := inviteLinkSetup(t)
+	link, err := GetInviteLinkByToken(s, "unlimited")
+	require.NoError(t, err)
+	require.Len(t, link.Teams, 1)
+	u, err := RegisterUserViaInviteLink(s, "unlimited", &user.User{Username: "invitee", Email: "invitee@example.com", Password: "12345678"})
+	require.NoError(t, err)
+	require.Equal(t, user.StatusActive, u.Status)
+	require.NoError(t, s.Commit())
+	events.DispatchPending(context.Background(), s)
+	events.AssertDispatched(t, &user.CreatedEvent{})
+	event := singleDispatchedEvent[*TeamMemberAddedEvent](t)
+	require.Equal(t, u.ID, event.Doer.ID)
+	require.Equal(t, u.ID, event.Member.ID)
+	db.AssertExists(t, "team_members", map[string]interface{}{"team_id": 1, "user_id": u.ID}, false)
+	db.AssertExists(t, "user_invite_links", map[string]interface{}{"id": 1, "uses": 1}, false)
+}
+
+func TestInviteLinkUnavailable(t *testing.T) {
+	for _, token := range []string{"unknown", "expired", "exhausted", "feature-off"} {
+		t.Run(token, func(t *testing.T) {
+			s, _ := inviteLinkSetup(t)
+			if token == "feature-off" {
+				license.ResetForTests()
+				token = "unlimited"
+			}
+			_, err := GetInviteLinkByToken(s, token)
+			require.ErrorIs(t, err, ErrInviteLinkInvalid{})
+			_, err = RegisterUserViaInviteLink(s, token, &user.User{Username: "blocked", Email: "blocked@example.com", Password: "12345678"})
+			require.ErrorIs(t, err, ErrInviteLinkInvalid{})
+			exists, err := s.Where("username = ?", "blocked").Exist(&user.User{})
+			require.NoError(t, err)
+			require.False(t, exists)
+		})
+	}
+}
+
+func TestInviteLinkLastUse(t *testing.T) {
+	s, _ := inviteLinkSetup(t)
+	_, err := RegisterUserViaInviteLink(s, "last-slot", &user.User{Username: "last-one", Email: "last-one@example.com", Password: "12345678"})
+	require.NoError(t, err)
+	require.NoError(t, s.Commit())
+	rs := db.NewSession()
+	defer rs.Close()
+	defer events.CleanupPending(rs)
+	_, err = RegisterUserViaInviteLink(rs, "last-slot", &user.User{Username: "too-late", Email: "too-late@example.com", Password: "12345678"})
+	require.ErrorIs(t, err, ErrInviteLinkInvalid{})
+	require.NoError(t, rs.Rollback())
+	db.AssertExists(t, "user_invite_links", map[string]interface{}{"id": 2, "uses": 2}, false)
+}
+
+func TestInviteLinkRollback(t *testing.T) {
+	s, _ := inviteLinkSetup(t)
+	existing, err := user.GetUserByID(s, 2)
+	require.NoError(t, err)
+	_, err = RegisterUserViaInviteLink(s, "unlimited", &user.User{Username: "rolled-back", Email: existing.Email, Password: "12345678"})
+	require.Error(t, err)
+	require.NoError(t, s.Rollback())
+	events.CleanupPending(s)
+	events.DispatchPending(context.Background(), s)
+	require.Zero(t, events.CountDispatchedEvents((&user.CreatedEvent{}).Name()))
+	require.Zero(t, events.CountDispatchedEvents((&TeamMemberAddedEvent{}).Name()))
+	db.AssertExists(t, "user_invite_links", map[string]interface{}{"id": 1, "uses": 0}, false)
+	db.AssertMissing(t, "users", map[string]interface{}{"username": "rolled-back"})
+}
+
+func TestInviteLinkConcurrentClaim(t *testing.T) {
+	s, _ := inviteLinkSetup(t)
+	require.NoError(t, s.Commit())
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for i := range 2 {
+		go func() {
+			session := db.NewSession()
+			defer session.Close()
+			defer events.CleanupPending(session)
+			<-start
+			name := fmt.Sprintf("concurrent-invite-%d", i)
+			_, err := RegisterUserViaInviteLink(session, "last-slot", &user.User{Username: name, Email: name + "@example.com", Password: "12345678"})
+			if err == nil {
+				err = session.Commit()
+			}
+			if err != nil {
+				_ = session.Rollback()
+			}
+			results <- err
+		}()
+	}
+	close(start)
+	successes := 0
+	for range 2 {
+		if <-results == nil {
+			successes++
+		}
+	}
+	require.Equal(t, 1, successes)
+	db.AssertExists(t, "user_invite_links", map[string]interface{}{"id": 2, "uses": 2}, false)
+	rs := db.NewSession()
+	defer rs.Close()
+	n, err := rs.Where("username LIKE ?", "concurrent-invite-%").Count(&user.User{})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+}
+
+func TestInviteLinkConfirmation(t *testing.T) {
+	for _, skip := range []bool{true, false} {
+		t.Run(fmt.Sprint(skip), func(t *testing.T) {
+			s, admin := inviteLinkSetup(t)
+			oldMailer := config.MailerEnabled.GetBool()
+			config.MailerEnabled.Set(true)
+			t.Cleanup(func() { config.MailerEnabled.Set(oldMailer) })
+			notifications.Fake()
+			t.Cleanup(notifications.Unfake)
+			link, err := CreateInviteLinkAsAdmin(s, admin, &CreateInviteLinkBody{Name: "confirm", SkipEmailConfirm: skip})
+			require.NoError(t, err)
+			created, err := RegisterUserViaInviteLink(s, link.ClearTextToken, &user.User{Username: "confirm-invite", Email: "confirm-invite@example.com", Password: "12345678"})
+			require.NoError(t, err)
+			notifications.AssertNotSent(t, &user.EmailConfirmNotification{})
+			require.NoError(t, s.Commit())
+			events.DispatchPending(context.Background(), s)
+			dispatched := events.GetDispatchedEvents((&user.EmailConfirmationRequestedEvent{}).Name())
+			if skip {
+				require.Equal(t, user.StatusActive, created.Status)
+				require.Empty(t, dispatched)
+			} else {
+				require.Equal(t, user.StatusEmailConfirmationRequired, created.Status)
+				require.Len(t, dispatched, 1)
+				events.TestListener(t, dispatched[0], &user.SendEmailConfirmation{})
+				notifications.AssertSent(t, &user.EmailConfirmNotification{})
+			}
+		})
+	}
 }

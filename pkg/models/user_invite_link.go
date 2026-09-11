@@ -174,3 +174,62 @@ func DeleteInviteLinkAsAdmin(s *xorm.Session, doer *user.User, id int64) error {
 	events.DispatchOnCommit(s, &AdminInviteLinkDeletedEvent{Link: link, Doer: doer})
 	return nil
 }
+
+func usableInviteLinkQuery(s *xorm.Session, token string) *xorm.Session {
+	return s.Where(builder.Eq{"token_hash": utils.Sha256Hex(token)}).
+		And(builder.Or(builder.IsNull{"expires_at"}, builder.Gt{"expires_at": time.Now()})).
+		And("max_uses IS NULL OR uses < max_uses")
+}
+
+func GetInviteLinkByToken(s *xorm.Session, token string) (*UserInviteLink, error) {
+	if !license.IsFeatureEnabled(license.FeatureUserInvites) {
+		return nil, ErrInviteLinkInvalid{}
+	}
+	link := &UserInviteLink{}
+	found, err := usableInviteLinkQuery(s, token).Get(link)
+	if err != nil {
+		return nil, fmt.Errorf("get invite link: %w", err)
+	}
+	if !found {
+		return nil, ErrInviteLinkInvalid{}
+	}
+	if err := loadInviteLinkTeams(s, link); err != nil {
+		return nil, err
+	}
+	return link, nil
+}
+
+func RegisterUserViaInviteLink(s *xorm.Session, token string, u *user.User) (*user.User, error) {
+	if !license.IsFeatureEnabled(license.FeatureUserInvites) {
+		return nil, ErrInviteLinkInvalid{}
+	}
+	claimed, err := usableInviteLinkQuery(s, token).Incr("uses").Update(&UserInviteLink{})
+	if err != nil {
+		return nil, fmt.Errorf("claim invite link use: %w", err)
+	}
+	if claimed == 0 {
+		return nil, ErrInviteLinkInvalid{}
+	}
+	link := &UserInviteLink{}
+	found, err := s.Where(builder.Eq{"token_hash": utils.Sha256Hex(token)}).Get(link)
+	if err != nil {
+		return nil, fmt.Errorf("load claimed invite link: %w", err)
+	}
+	if !found {
+		return nil, ErrInviteLinkInvalid{}
+	}
+	created, err := RegisterUser(s, u, user.CreateUserOptions{SkipEmailConfirm: link.SkipEmailConfirm})
+	if err != nil {
+		return nil, err
+	}
+	if err := loadInviteLinkTeams(s, link); err != nil {
+		return nil, err
+	}
+	for _, team := range link.Teams {
+		if _, err := s.Insert(&TeamMember{TeamID: team.ID, UserID: created.ID}); err != nil {
+			return nil, fmt.Errorf("join invited team: %w", err)
+		}
+		events.DispatchOnCommit(s, &TeamMemberAddedEvent{Team: &Team{ID: team.ID, Name: team.Name}, Member: created, Doer: created})
+	}
+	return created, nil
+}
