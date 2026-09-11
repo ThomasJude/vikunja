@@ -84,6 +84,7 @@
 		<Modal
 			v-if="createOpen"
 			variant="hint-modal"
+			:aria-label="$t('admin.inviteLinks.create')"
 			@close="closeCreate"
 		>
 			<Card
@@ -131,6 +132,7 @@
 								multiple
 								show-empty
 								label="name"
+								:aria-label="$t('admin.inviteLinks.teams')"
 								:search-results="teamResults"
 								:loading="loadingTeams"
 								@search="searchTeams"
