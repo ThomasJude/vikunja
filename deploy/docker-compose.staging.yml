@@ -1,0 +1,96 @@
+name: vikunja-staging
+
+services:
+  db:
+    image: mariadb:10.11
+    container_name: vikunja-staging-db
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=128M
+      - --max-connections=30
+      - --performance-schema=OFF
+    environment:
+      MARIADB_DATABASE: ${MARIADB_DATABASE}
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+    volumes:
+      - /opt/vikunja/db:/var/lib/mysql
+    networks:
+      - staging
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - healthcheck.sh
+        - --connect
+        - --innodb_initialized
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  vikunja:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+
+    image: thomasjude/vikunja:2.6-utlapp-dev
+    container_name: vikunja-staging-app
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    environment:
+      VIKUNJA_SERVICE_PUBLICURL: https://staging-tasks.utlapp.com/
+      VIKUNJA_SERVICE_SECRET: ${VIKUNJA_SERVICE_SECRET}
+
+      VIKUNJA_DATABASE_TYPE: mysql
+      VIKUNJA_DATABASE_HOST: db
+      VIKUNJA_DATABASE_PORT: "3306"
+      VIKUNJA_DATABASE_DATABASE: ${MARIADB_DATABASE}
+      VIKUNJA_DATABASE_USER: ${MARIADB_USER}
+      VIKUNJA_DATABASE_PASSWORD: ${MARIADB_PASSWORD}
+
+      VIKUNJA_AUTH_LOCAL_ENABLED: "true"
+      VIKUNJA_SERVICE_ENABLEREGISTRATION: "false"
+
+      VIKUNJA_MAILER_ENABLED: "true"
+      VIKUNJA_MAILER_HOST: ${VIKUNJA_MAILER_HOST}
+      VIKUNJA_MAILER_PORT: ${VIKUNJA_MAILER_PORT}
+      VIKUNJA_MAILER_USERNAME: ${VIKUNJA_MAILER_USERNAME}
+      VIKUNJA_MAILER_PASSWORD: ${VIKUNJA_MAILER_PASSWORD}
+      VIKUNJA_MAILER_FROMEMAIL: ${VIKUNJA_MAILER_FROMEMAIL}
+      VIKUNJA_MAILER_AUTHTYPE: ${VIKUNJA_MAILER_AUTHTYPE}
+
+      VIKUNJA_SERVICE_ENABLEEMAILREMINDERS: "false"
+      VIKUNJA_DEFAULTSETTINGS_EMAIL_REMINDERS_ENABLED: "false"
+      VIKUNJA_DEFAULTSETTINGS_OVERDUE_TASKS_REMINDERS_ENABLED: "false"
+      VIKUNJA_WEBHOOKS_ENABLED: "false"
+
+      VIKUNJA_SERVICE_MOTD: "UTLApp Vikunja Staging"
+
+      #keycloak login
+      VIKUNJA_AUTH_OPENID_ENABLED: ${VIKUNJA_AUTH_OPENID_ENABLED}
+      VIKUNJA_AUTH_OPENID_PROVIDERS_KEYCLOAK_NAME: ${VIKUNJA_AUTH_OPENID_PROVIDERS_KEYCLOAK_NAME}
+      VIKUNJA_AUTH_OPENID_PROVIDERS_KEYCLOAK_AUTHURL: ${VIKUNJA_AUTH_OPENID_PROVIDERS_KEYCLOAK_AUTHURL}
+      VIKUNJA_AUTH_OPENID_PROVIDERS_KEYCLOAK_CLIENTID: ${VIKUNJA_AUTH_OPENID_PROVIDERS_KEYCLOAK_CLIENTID}
+      VIKUNJA_AUTH_OPENID_PROVIDERS_KEYCLOAK_CLIENTSECRET: ${VIKUNJA_AUTH_OPENID_PROVIDERS_KEYCLOAK_CLIENTSECRET}
+      VIKUNJA_AUTH_OPENID_PROVIDERS_KEYCLOAK_SCOPE: ${VIKUNJA_AUTH_OPENID_PROVIDERS_KEYCLOAK_SCOPE}
+
+    volumes:
+      - /opt/vikunja/files:/app/vikunja/files
+
+    ports:
+      - "127.0.0.1:3456:3456"
+
+    networks:
+      - staging
+
+    restart: unless-stopped
+
+networks:
+  staging:
+    name: vikunja-staging-net
