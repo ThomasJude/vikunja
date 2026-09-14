@@ -47,6 +47,7 @@ func GetTables() []interface{} {
 		&Task{},
 		&Team{},
 		&TeamMember{},
+		&TeamRelation{},
 		&TeamProject{},
 		&ProjectUser{},
 		&TaskAssginee{},
