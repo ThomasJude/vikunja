@@ -362,6 +362,14 @@ func (t *Team) Delete(s *xorm.Session, a web.Auth) (err error) {
 		return
 	}
 
+	// Delete team relations
+	_, err = s.
+		Where("parent_team_id = ? OR child_team_id = ?", t.ID, t.ID).
+		Delete(&TeamRelation{})
+	if err != nil {
+		return
+	}
+
 	events.DispatchOnCommit(s, &TeamDeletedEvent{
 		Team: t,
 		Doer: doerFromAuth(s, a),

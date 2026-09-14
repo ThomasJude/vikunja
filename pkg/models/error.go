@@ -1681,6 +1681,121 @@ func (err ErrCannotRemoveUserFromExternalTeam) HTTPError() web.HTTPError {
 	}
 }
 
+// ErrTeamCannotContainItself represents an invalid self-referencing team relation.
+type ErrTeamCannotContainItself struct {
+	TeamID int64
+}
+
+func IsErrTeamCannotContainItself(err error) bool {
+	_, ok := err.(ErrTeamCannotContainItself)
+	return ok
+}
+
+func (err ErrTeamCannotContainItself) Error() string {
+	return fmt.Sprintf("Team cannot contain itself [Team ID: %d]", err.TeamID)
+}
+
+const ErrCodeTeamCannotContainItself = 6011
+
+// HTTPError holds the http error description
+func (err ErrTeamCannotContainItself) HTTPError() web.HTTPError {
+	return web.HTTPError{
+		HTTPCode: http.StatusBadRequest,
+		Code:     ErrCodeTeamCannotContainItself,
+		Message:  "A team cannot contain itself.",
+	}
+}
+
+// ErrTeamRelationAlreadyExists represents an existing parent-child team relation.
+type ErrTeamRelationAlreadyExists struct {
+	ParentTeamID int64
+	ChildTeamID  int64
+}
+
+func IsErrTeamRelationAlreadyExists(err error) bool {
+	_, ok := err.(ErrTeamRelationAlreadyExists)
+	return ok
+}
+
+func (err ErrTeamRelationAlreadyExists) Error() string {
+	return fmt.Sprintf(
+		"Team relation already exists [Parent Team ID: %d, Child Team ID: %d]",
+		err.ParentTeamID,
+		err.ChildTeamID,
+	)
+}
+
+const ErrCodeTeamRelationAlreadyExists = 6012
+
+// HTTPError holds the http error description
+func (err ErrTeamRelationAlreadyExists) HTTPError() web.HTTPError {
+	return web.HTTPError{
+		HTTPCode: http.StatusConflict,
+		Code:     ErrCodeTeamRelationAlreadyExists,
+		Message:  "This team relation already exists.",
+	}
+}
+
+// ErrTeamRelationWouldCreateCycle represents a cyclic team relation.
+type ErrTeamRelationWouldCreateCycle struct {
+	ParentTeamID int64
+	ChildTeamID  int64
+}
+
+func IsErrTeamRelationWouldCreateCycle(err error) bool {
+	_, ok := err.(ErrTeamRelationWouldCreateCycle)
+	return ok
+}
+
+func (err ErrTeamRelationWouldCreateCycle) Error() string {
+	return fmt.Sprintf(
+		"Team relation would create a cycle [Parent Team ID: %d, Child Team ID: %d]",
+		err.ParentTeamID,
+		err.ChildTeamID,
+	)
+}
+
+const ErrCodeTeamRelationWouldCreateCycle = 6013
+
+// HTTPError holds the http error description
+func (err ErrTeamRelationWouldCreateCycle) HTTPError() web.HTTPError {
+	return web.HTTPError{
+		HTTPCode: http.StatusConflict,
+		Code:     ErrCodeTeamRelationWouldCreateCycle,
+		Message:  "This team relation would create a cycle.",
+	}
+}
+
+// ErrTeamRelationDoesNotExist represents a missing parent-child team relation.
+type ErrTeamRelationDoesNotExist struct {
+	ParentTeamID int64
+	ChildTeamID  int64
+}
+
+func IsErrTeamRelationDoesNotExist(err error) bool {
+	_, ok := err.(ErrTeamRelationDoesNotExist)
+	return ok
+}
+
+func (err ErrTeamRelationDoesNotExist) Error() string {
+	return fmt.Sprintf(
+		"Team relation does not exist [Parent Team ID: %d, Child Team ID: %d]",
+		err.ParentTeamID,
+		err.ChildTeamID,
+	)
+}
+
+const ErrCodeTeamRelationDoesNotExist = 6014
+
+// HTTPError holds the http error description
+func (err ErrTeamRelationDoesNotExist) HTTPError() web.HTTPError {
+	return web.HTTPError{
+		HTTPCode: http.StatusNotFound,
+		Code:     ErrCodeTeamRelationDoesNotExist,
+		Message:  "This team relation does not exist.",
+	}
+}
+
 // ====================
 // User <-> Project errors
 // ====================
