@@ -47,7 +47,18 @@ func (pa *projectAccess) permission(projectID int64) (Permission, bool) {
 // tree uses UNION, not UNION ALL: deduplicating (id, permission) terminates on a
 // parent_project_id cycle and caps the row count at three per project.
 const projectAccessCTE = `
-WITH RECURSIVE grants (project_id, permission) AS (
+WITH RECURSIVE effective_teams (team_id) AS (
+    SELECT tm.team_id
+    FROM team_members tm
+    WHERE tm.user_id = ?
+
+    UNION
+
+    SELECT tr.parent_team_id
+    FROM team_relations tr
+    INNER JOIN effective_teams et ON et.team_id = tr.child_team_id
+),
+grants (project_id, permission) AS (
     SELECT project_id, MAX(permission)
     FROM (
         SELECT id AS project_id, 2 AS permission FROM projects WHERE owner_id = ?
@@ -56,8 +67,7 @@ WITH RECURSIVE grants (project_id, permission) AS (
         UNION ALL
         SELECT tp.project_id, tp.permission
         FROM team_projects tp
-        INNER JOIN team_members tm ON tm.team_id = tp.team_id
-        WHERE tm.user_id = ?
+        INNER JOIN effective_teams et ON et.team_id = tp.team_id
     ) direct_grants
     GROUP BY project_id
 ),
