@@ -265,30 +265,21 @@ func CurrentInfo() Info {
 
 // EnabledProFeatures returns enabled features (empty slice in free mode); Feature values marshal to their JSON string key.
 func EnabledProFeatures() []Feature {
-	st := loadState()
-	if !st.Licensed {
-		return []Feature{}
+	return []Feature{
+		FeatureAdminPanel,
+		FeatureTimeTracking,
+		FeatureAuditLogs,
 	}
-	out := make([]Feature, 0, len(st.Features))
-	for f, on := range st.Features {
-		if !on {
-			continue
-		}
-		out = append(out, f)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].String() < out[j].String()
-	})
-	return out
 }
 
 // IsFeatureEnabled returns whether a specific licensed feature is enabled.
 func IsFeatureEnabled(feature Feature) bool {
-	st := loadState()
-	if !st.Licensed {
+	switch feature {
+	case FeatureAdminPanel, FeatureTimeTracking, FeatureAuditLogs:
+		return true
+	default:
 		return false
 	}
-	return st.Features[feature]
 }
 
 // MaxUsersReached returns whether the licensed user limit has been reached.

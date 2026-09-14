@@ -55,3 +55,41 @@ PLAN.md
 plans/
 /.crush/
 /.playwright-mcp
+
+# -------------------------------------------------------------------
+# UTLApp local deployment / secret files
+# -------------------------------------------------------------------
+
+# Root/local environment files
+/.env
+/.env.local
+/.env.production
+/.env.staging
+/.deploy.env
+
+# Deployment secrets and overrides
+/deploy/.env
+/deploy/.env.*
+/deploy/secrets/
+/deploy/certs/
+/deploy/*.key
+/deploy/*.pem
+/deploy/docker-compose.override.yml
+/deploy/docker-compose.local.yml
+
+# Runtime data must never enter source control
+/runtime/
+/data/
+/db/
+/files/
+/backups/
+
+# Database / backup exports
+/*.sql
+/*.sql.gz
+/*.dump
+/*.backup
+
+# Local build/deployment artifacts
+/deploy/tmp/
+/deploy/logs/
