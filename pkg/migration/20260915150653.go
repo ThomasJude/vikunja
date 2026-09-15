@@ -12,28 +12,31 @@
 // GNU Affero General Public License for more details.
 //
 // You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 package migration
 
 import (
+	"fmt"
+
 	"src.techknowlogick.com/xormigrate"
 	"xorm.io/xorm"
 )
 
-type TeamRelationUniqueIndex20260915150653 struct {
-}
-
-func (TeamRelationUniqueIndex20260915150653) TableName() string {
-	return "TeamRelationUniqueIndex"
-}
-
 func init() {
 	migrations = append(migrations, &xormigrate.Migration{
 		ID:          "20260915150653",
-		Description: "",
+		Description: "Add unique index for nested team relations",
 		Migrate: func(tx *xorm.Engine) error {
-			return partialSync(tx, TeamRelationUniqueIndex20260915150653{})
+			_, err := tx.Exec(`
+				CREATE UNIQUE INDEX UQE_team_relations_team_relation
+				ON team_relations (parent_team_id, child_team_id)
+			`)
+			if err != nil {
+				return fmt.Errorf("could not create unique index on team relations: %w", err)
+			}
+
+			return nil
 		},
 		Rollback: func(tx *xorm.Engine) error {
 			return nil
