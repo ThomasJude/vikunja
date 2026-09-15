@@ -17,21 +17,29 @@
 package migration
 
 import (
+	"time"
+
 	"src.techknowlogick.com/xormigrate"
 	"xorm.io/xorm"
 )
 
 type TeamRelation20260914184012 struct {
+	ID int64 `xorm:"bigint autoincr not null unique pk"`
+
+	ParentTeamID int64 `xorm:"bigint not null index unique(team_relation)"`
+	ChildTeamID  int64 `xorm:"bigint not null index unique(team_relation)"`
+
+	Created time.Time `xorm:"created not null"`
 }
 
 func (TeamRelation20260914184012) TableName() string {
-	return "TeamRelation"
+	return "team_relations"
 }
 
 func init() {
 	migrations = append(migrations, &xormigrate.Migration{
 		ID:          "20260914184012",
-		Description: "",
+		Description: "create nested team relations table",
 		Migrate: func(tx *xorm.Engine) error {
 			return partialSync(tx, TeamRelation20260914184012{})
 		},
