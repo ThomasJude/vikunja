@@ -481,7 +481,9 @@ async function findTeam(query: string) {
 
 	foundTeams.value = teams.filter((candidate: ITeam) =>
 		candidate.id !== teamId.value &&
-		candidate.maxPermission > Permissions.READ &&
+		candidate.members?.some(member =>
+			member.id === userInfo.value.id && member.admin,
+		) &&
 		!childTeamIds.has(candidate.id),
 	)
 }
