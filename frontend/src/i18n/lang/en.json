@@ -1281,6 +1281,20 @@
       "madeMember": "The team member was successfully made member.",
       "madeAdmin": "The team member was successfully made admin.",
       "mustSelectUser": "Please select a user.",
+      "children": {
+        "title": "Child Teams",
+        "description": "Members of child teams inherit the project access granted to this team. Team administration is not inherited.",
+        "search": "Type to search a team…",
+        "add": "Add team",
+        "empty": "No child teams have been added.",
+        "mustSelect": "Please select a team.",
+        "addedSuccess": "The child team was successfully added.",
+        "remove": {
+          "header": "Remove child team",
+          "text": "Are you sure you want to remove {team} as a child team? Its members will no longer inherit project access from this team.",
+          "success": "The child team was successfully removed."
+        }
+      },
       "delete": {
         "header": "Delete the team",
         "text1": "Are you sure you want to delete this team and all of its members?",

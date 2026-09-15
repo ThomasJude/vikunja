@@ -170,6 +170,87 @@
 			</div>
 		</Card>
 
+		<Card
+			v-if="userIsAdmin"
+			class="is-fullwidth has-overflow"
+			:title="$t('team.edit.children.title')"
+			:padding="false"
+		>
+			<div class="p-4">
+				<p class="mbe-4">
+					{{ $t('team.edit.children.description') }}
+				</p>
+
+				<form @submit.prevent="addChildTeam">
+					<div class="field has-addons">
+						<div class="control is-expanded">
+							<Multiselect
+								v-model="newChildTeam"
+								:loading="teamService.loading"
+								:placeholder="$t('team.edit.children.search')"
+								:search-results="foundTeams"
+								label="name"
+								@search="findTeam"
+							/>
+						</div>
+						<div class="control">
+							<XButton
+								:loading="teamRelationService.loading"
+								icon="plus"
+								@click="addChildTeam"
+							>
+								{{ $t('team.edit.children.add') }}
+							</XButton>
+						</div>
+					</div>
+
+					<p
+						v-if="showMustSelectTeamError"
+						class="help is-danger"
+					>
+						{{ $t('team.edit.children.mustSelect') }}
+					</p>
+				</form>
+			</div>
+
+			<div
+				v-if="childTeams.length > 0"
+				class="has-horizontal-overflow"
+			>
+				<table class="table has-actions is-striped is-hoverable is-fullwidth">
+					<tbody>
+						<tr
+							v-for="child in childTeams"
+							:key="child.id"
+						>
+							<td>
+								{{ child.name }}
+							</td>
+							<td class="actions">
+								<XButton
+									:loading="teamRelationService.loading"
+									danger
+									icon="trash-alt"
+									:aria-label="$t('team.edit.children.remove.header')"
+									@click="() => {
+										childTeamToDelete = child
+										showChildTeamDeleteModal = true
+									}"
+								/>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+
+			<p
+				v-else
+				class="p-4 pt-0"
+			>
+				{{ $t('team.edit.children.empty') }}
+			</p>
+		</Card>
+
 		<XButton
 			v-if="team && !team.externalId"
 			class="is-fullwidth is-danger"
@@ -214,6 +295,25 @@
 			</template>
 		</Modal>
 
+		<!-- Child team delete modal -->
+		<Modal
+			:enabled="showChildTeamDeleteModal"
+			@close="showChildTeamDeleteModal = false"
+			@submit="deleteChildTeam()"
+		>
+			<template #header>
+				<span>{{ $t('team.edit.children.remove.header') }}</span>
+			</template>
+
+			<template #text>
+				<p>
+					{{ $t('team.edit.children.remove.text', {
+						team: childTeamToDelete?.name,
+					}) }}
+				</p>
+			</template>
+		</Modal>
+
 		<!-- User delete modal -->
 		<Modal
 			:enabled="showUserDeleteModal"
@@ -248,6 +348,7 @@ import User from '@/components/misc/User.vue'
 import {getDisplayName} from '@/models/user'
 import TeamService from '@/services/team'
 import TeamMemberService from '@/services/teamMember'
+import TeamRelationService from '@/services/teamRelation'
 import UserService from '@/services/user'
 
 import {PERMISSIONS as Permissions} from '@/constants/permissions'
@@ -284,6 +385,7 @@ const sortedMembers = computed(() => {
 
 const teamService = ref<TeamService>(new TeamService())
 const teamMemberService = ref<TeamMemberService>(new TeamMemberService())
+const teamRelationService = ref<TeamRelationService>(new TeamRelationService())
 const userService = ref<UserService>(new UserService())
 
 const team = ref<ITeam>()
@@ -292,11 +394,18 @@ const memberToDelete = ref<ITeamMember>()
 const newMember = ref<IUser>()
 const foundUsers = ref<IUser[]>()
 
+const childTeams = ref<ITeam[]>([])
+const foundTeams = ref<ITeam[]>([])
+const newChildTeam = ref<ITeam>()
+const childTeamToDelete = ref<ITeam>()
+
 const showDeleteModal = ref(false)
 const showUserDeleteModal = ref(false)
+const showChildTeamDeleteModal = ref(false)
 const showLeaveModal = ref(false)
 const showErrorTeamnameRequired = ref(false)
 const showMustSelectUserError = ref(false)
+const showMustSelectTeamError = ref(false)
 
 const title = ref('')
 
@@ -306,6 +415,14 @@ async function loadTeam() {
 	team.value = await teamService.value.get({id: teamId.value})
 	title.value = t('team.edit.title', {team: team.value?.name})
 	useTitle(() => title.value)
+
+	if (userIsAdmin.value) {
+		await loadChildTeams()
+	}
+}
+
+async function loadChildTeams() {
+	childTeams.value = await teamRelationService.value.getAll(teamId.value)
 }
 
 async function save() {
@@ -351,6 +468,58 @@ async function addUser() {
 	newMember.value = null
 	await loadTeam()
 	success({message: t('team.edit.userAddedSuccess')})
+}
+
+async function findTeam(query: string) {
+	if (query === '') {
+		foundTeams.value = []
+		return
+	}
+
+	const teams = await teamService.value.getAll({}, {s: query})
+	const childTeamIds = new Set(childTeams.value.map(team => team.id))
+
+	foundTeams.value = teams.filter((candidate: ITeam) =>
+		candidate.id !== teamId.value &&
+		candidate.maxPermission > Permissions.READ &&
+		!childTeamIds.has(candidate.id),
+	)
+}
+
+async function addChildTeam() {
+	showMustSelectTeamError.value = false
+
+	if (!newChildTeam.value) {
+		showMustSelectTeamError.value = true
+		return
+	}
+
+	await teamRelationService.value.create(teamId.value, newChildTeam.value.id)
+
+	newChildTeam.value = undefined
+	foundTeams.value = []
+
+	await loadChildTeams()
+	success({message: t('team.edit.children.addedSuccess')})
+}
+
+async function deleteChildTeam() {
+	if (!childTeamToDelete.value) {
+		return
+	}
+
+	try {
+		await teamRelationService.value.delete(
+			teamId.value,
+			childTeamToDelete.value.id,
+		)
+
+		await loadChildTeams()
+		success({message: t('team.edit.children.remove.success')})
+	} finally {
+		childTeamToDelete.value = undefined
+		showChildTeamDeleteModal.value = false
+	}
 }
 
 async function toggleUserType(member: ITeamMember) {
