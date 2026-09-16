@@ -69,6 +69,19 @@ export default class TaskService extends AbstractService<ITask> {
 		// Ensure that projectId is an int
 		model.projectId = Number(model.projectId)
 
+		if (model.recurrence) {
+			model.recurrence = {
+				frequency: Number(model.recurrence.frequency),
+				interval: Number(model.recurrence.interval),
+				basis: Number(model.recurrence.basis),
+				byWeekdays: Number(model.recurrence.byWeekdays),
+				byMonth: Number(model.recurrence.byMonth),
+				byMonthDay: Number(model.recurrence.byMonthDay),
+				bySetPos: Number(model.recurrence.bySetPos),
+				missingPolicy: Number(model.recurrence.missingPolicy),
+			}
+		}
+
 		// Convert dates into an iso string
 		model.dueDate = parseDate(model.dueDate)
 		model.startDate = parseDate(model.startDate)

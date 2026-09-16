@@ -11,6 +11,7 @@ import type {IBucket} from './IBucket'
 import type {IRelationKind} from '@/types/IRelationKind'
 import type {IRepeatAfter} from '@/types/IRepeatAfter'
 import type {IRepeatMode} from '@/types/IRepeatMode'
+import type {ITaskRecurrence} from '@/modelTypes/ITaskRecurrence'
 
 import type {PartialWithId} from '@/types/PartialWithId'
 import type {ITaskReminder} from '@/modelTypes/ITaskReminder'
@@ -34,6 +35,7 @@ export interface ITask extends IAbstract {
 	repeatAfter: number | IRepeatAfter
 	repeatFromCurrentDate: boolean
 	repeatMode: IRepeatMode
+	recurrence: ITaskRecurrence | null
 	reminders: ITaskReminder[]
 	parentTaskId: ITask['id']
 	hexColor: string

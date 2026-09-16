@@ -11,6 +11,7 @@ import type {IBucket} from '@/modelTypes/IBucket'
 import type {IRepeatAfter} from '@/types/IRepeatAfter'
 import type {IRelationKind} from '@/types/IRelationKind'
 import {TASK_REPEAT_MODES, type IRepeatMode} from '@/types/IRepeatMode'
+import type {ITaskRecurrence} from '@/modelTypes/ITaskRecurrence'
 
 import {parseDateOrNull} from '@/helpers/parseDateOrNull'
 import {secondsToPeriod} from '@/helpers/time/period'
@@ -74,6 +75,7 @@ export default class TaskModel extends AbstractModel<ITask> implements ITask {
 	repeatAfter: number | IRepeatAfter = 0
 	repeatFromCurrentDate = false
 	repeatMode: IRepeatMode = TASK_REPEAT_MODES.REPEAT_MODE_DEFAULT
+	recurrence: ITaskRecurrence | null = null
 	reminders: ITaskReminder[] = []
 	parentTaskId: ITask['id'] = 0
 	hexColor = ''
