@@ -71,78 +71,58 @@
 			:padding="false"
 		>
 			<form
-				v-if="userIsAdmin && !team.oidcId"
-				class="p-4"
-				@submit.prevent="addUser"
+				v-if="userIsAdmin"
+				@submit.prevent="addMember"
 			>
 				<div class="field has-addons">
 					<div class="control is-expanded">
 						<Multiselect
-							v-model="newMember"
-							:loading="userService.loading"
+							v-model="newMemberSelection"
+							:loading="userService.loading || teamService.loading"
 							:placeholder="$t('team.edit.search')"
-							:search-results="foundUsers"
-							label="username"
-							@search="findUser"
+							:search-results="foundMemberOptions"
+							label="label"
+							@search="findMember"
 						>
-							<template #searchResult="{option: user}">
+							<template #searchResult="{option}">
 								<User
+									v-if="option.type === 'user'"
 									:avatar-size="24"
-									:user="user"
+									:user="option.user"
 									class="m-0"
 								/>
+								<div
+									v-else
+									class="is-flex is-align-items-center"
+								>
+									<span class="icon is-small mie-2">
+										<Icon icon="users" />
+									</span>
+									<span>{{ option.team.name }}</span>
+									<span class="has-text-grey mis-2">
+										{{ $t('team.edit.team') }}
+									</span>
+								</div>
 							</template>
 						</Multiselect>
 					</div>
+
 					<div class="control">
 						<XButton
+							:loading="teamMemberService.loading || teamRelationService.loading"
 							icon="plus"
-							@click="addUser"
+							@click="addMember"
 						>
 							{{ $t('team.edit.addUser') }}
 						</XButton>
 					</div>
 				</div>
+
 				<p
-					v-if="showMustSelectUserError"
+					v-if="showMustSelectMemberError"
 					class="help is-danger"
 				>
 					{{ $t('team.edit.mustSelectUser') }}
-				</p>
-			</form>
-
-			<form
-				v-if="userIsAdmin"
-				class="mt-4"
-				@submit.prevent="addChildTeam"
-			>
-				<div class="field has-addons">
-					<div class="control is-expanded">
-						<Multiselect
-							v-model="newChildTeam"
-							:loading="teamService.loading"
-							:placeholder="$t('team.edit.children.search')"
-							:search-results="foundTeams"
-							label="name"
-							@search="findTeam"
-						/>
-					</div>
-					<div class="control">
-						<XButton
-							:loading="teamRelationService.loading"
-							icon="plus"
-							@click="addChildTeam"
-						>
-							{{ $t('team.edit.children.add') }}
-						</XButton>
-					</div>
-				</div>
-
-				<p
-					v-if="showMustSelectTeamError"
-					class="help is-danger"
-				>
-					{{ $t('team.edit.children.mustSelect') }}
 				</p>
 			</form>
 
@@ -161,8 +141,11 @@
 								/>
 							</td>
 							<td>
+								{{ $t('team.edit.user') }}
 								<template v-if="m.id === userInfo.id">
-									<b class="is-success">You</b>
+									<b class="is-success">
+										({{ $t('team.edit.you') }})
+									</b>
 								</template>
 							</td>
 							<td class="type">
@@ -378,6 +361,20 @@ import type {IUser} from '@/modelTypes/IUser'
 import type {ITeamMember} from '@/modelTypes/ITeamMember'
 import type {ITeamRelation} from '@/modelTypes/ITeamRelation'
 
+type MemberSearchOption =
+	| {
+		id: number
+		label: string
+		type: 'user'
+		user: IUser
+	}
+	| {
+		id: number
+		label: string
+		type: 'team'
+		team: ITeam
+	}
+
 const authStore = useAuthStore()
 const configStore = useConfigStore()
 const route = useRoute()
@@ -413,12 +410,10 @@ const userService = ref<UserService>(new UserService())
 const team = ref<ITeam>()
 const teamId = computed(() => Number(route.params.id))
 const memberToDelete = ref<ITeamMember>()
-const newMember = ref<IUser>()
-const foundUsers = ref<IUser[]>()
+const newMemberSelection = ref<MemberSearchOption>()
+const foundMemberOptions = ref<MemberSearchOption[]>([])
 
 const childTeams = ref<ITeamRelation[]>([])
-const foundTeams = ref<ITeam[]>([])
-const newChildTeam = ref<ITeam>()
 const childTeamToDelete = ref<ITeam>()
 
 const showDeleteModal = ref(false)
@@ -426,8 +421,7 @@ const showUserDeleteModal = ref(false)
 const showChildTeamDeleteModal = ref(false)
 const showLeaveModal = ref(false)
 const showErrorTeamnameRequired = ref(false)
-const showMustSelectUserError = ref(false)
-const showMustSelectTeamError = ref(false)
+const showMustSelectMemberError = ref(false)
 
 const title = ref('')
 
@@ -477,54 +471,84 @@ async function deleteMember() {
 	}
 }
 
-async function addUser() {
-	showMustSelectUserError.value = false
-	if(!newMember.value) {
-		showMustSelectUserError.value = true
-		return
-	}
-	await teamMemberService.value.create({
-		teamId: teamId.value,
-		username: newMember.value.username,
-	})
-	newMember.value = null
-	await loadTeam()
-	success({message: t('team.edit.userAddedSuccess')})
-}
-
-async function findTeam(query: string) {
+async function findMember(query: string) {
 	if (query === '') {
-		foundTeams.value = []
+		foundMemberOptions.value = []
 		return
 	}
 
-	const teams = await teamService.value.getAll({}, {s: query})
-	const childTeamIds = new Set(childTeams.value.map(relation => relation.childTeam.id))
+	const [users, teams] = await Promise.all([
+		userService.value.getAll({}, {s: query}),
+		teamService.value.getAll({}, {s: query}),
+	])
 
-	foundTeams.value = teams.filter((candidate: ITeam) =>
-		candidate.id !== teamId.value &&
-		candidate.members?.some(member =>
-			member.id === userInfo.value.id && member.admin,
-		) &&
-		!childTeamIds.has(candidate.id),
+	const existingUserIds = new Set(
+		(team.value?.members ?? []).map(member => member.id),
 	)
+	const existingTeamIds = new Set(
+		childTeams.value.map(relation => relation.childTeam.id),
+	)
+
+	const userOptions = users
+		.filter((candidate: IUser) => !existingUserIds.has(candidate.id))
+		.map((candidate: IUser): MemberSearchOption => ({
+			id: candidate.id,
+			label: getDisplayName(candidate),
+			type: 'user',
+			user: candidate,
+		}))
+
+	const teamOptions = teams
+		.filter((candidate: ITeam) =>
+			candidate.id !== teamId.value &&
+			candidate.members?.some(member =>
+				member.id === userInfo.value.id && member.admin,
+			) &&
+			!existingTeamIds.has(candidate.id),
+		)
+		.map((candidate: ITeam): MemberSearchOption => ({
+			id: -candidate.id,
+			label: candidate.name,
+			type: 'team',
+			team: candidate,
+		}))
+
+	foundMemberOptions.value = [...userOptions, ...teamOptions]
+		.sort((a, b) =>
+			a.label.localeCompare(b.label, undefined, {sensitivity: 'base'}),
+		)
 }
 
-async function addChildTeam() {
-	showMustSelectTeamError.value = false
+async function addMember() {
+	showMustSelectMemberError.value = false
 
-	if (!newChildTeam.value) {
-		showMustSelectTeamError.value = true
+	const selection = newMemberSelection.value
+
+	if (!selection) {
+		showMustSelectMemberError.value = true
 		return
 	}
 
-	await teamRelationService.value.create(teamId.value, newChildTeam.value.id)
+	if (selection.type === 'user') {
+		await teamMemberService.value.create({
+			teamId: teamId.value,
+			username: selection.user.username,
+		})
+	} else {
+		await teamRelationService.value.create(
+			teamId.value,
+			selection.team.id,
+		)
+	}
 
-	newChildTeam.value = undefined
-	foundTeams.value = []
+	newMemberSelection.value = undefined
+	foundMemberOptions.value = []
 
-	await loadChildTeams()
-	success({message: t('team.edit.children.addedSuccess')})
+	await loadTeam()
+
+	success({
+		message: t('team.edit.userAddedSuccess'),
+	})
 }
 
 async function toggleChildTeamType(relation: ITeamRelation) {
@@ -577,16 +601,6 @@ async function toggleUserType(member: ITeamMember) {
 			t('team.edit.madeAdmin') :
 			t('team.edit.madeMember'),
 	})
-}
-
-async function findUser(query: string) {
-	if (query === '') {
-		foundUsers.value = []
-		return
-	}
-
-	const users = await userService.value.getAll({}, {s: query})
-	foundUsers.value = users.filter((u: IUser) => u.id !== userInfo.value.id)
 }
 
 async function leave() {

@@ -1272,15 +1272,15 @@
     "edit": {
       "title": "Edit Team \"{team}\"",
       "members": "Team Members",
-      "search": "Type to search a user…",
-      "addUser": "Add to team",
+      "search": "Type to search a user or team…",
+      "addUser": "Add",
       "makeMember": "Make Member",
       "makeAdmin": "Make Admin",
       "success": "The team was successfully updated.",
       "userAddedSuccess": "The team member was successfully added.",
       "madeMember": "The team member was successfully made member.",
       "madeAdmin": "The team member was successfully made admin.",
-      "mustSelectUser": "Please select a user.",
+      "mustSelectUser": "Please select a user or team.",
       "children": {
         "title": "Child Teams",
         "description": "Nested teams inherit this team's project access. Set a nested team as Admin to allow its members to manage this team.",
@@ -1313,6 +1313,8 @@
         "text2": "You will lose access to all projects this team has access to. If you change your mind you'll need a team admin to add you again.",
         "success": "You have successfully left the team."
       },
+      "user": "User",
+      "you": "You",
       "team": "Team",
       "teamMadeMember": "The nested team was successfully made a member.",
       "teamMadeAdmin": "The nested team was successfully made an admin."
