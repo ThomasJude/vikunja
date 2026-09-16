@@ -18,6 +18,7 @@ package models
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"regexp"
 	"sort"
@@ -217,7 +218,8 @@ func (t *Task) GetFrontendURL() string {
 }
 
 func (t *Task) isRepeating() bool {
-	return t.RepeatAfter > 0 ||
+	return t.Recurrence != nil ||
+		t.RepeatAfter > 0 ||
 		t.RepeatMode == TaskRepeatModeMonth
 }
 
@@ -1362,6 +1364,9 @@ func (t *Task) updateSingleTask(s *xorm.Session, a web.Auth, fields []string) (e
 		}
 		colsToUpdate = cols
 		updateRecurrence = fieldSet["recurrence"]
+		if !updateRecurrence {
+			t.Recurrence = ot.Recurrence
+		}
 
 		if !fieldSet["title"] {
 			t.Title = ot.Title
@@ -1416,6 +1421,7 @@ func (t *Task) updateSingleTask(s *xorm.Session, a web.Auth, fields []string) (e
 		if err := validateTaskRecurrence(requestedRecurrence); err != nil {
 			return err
 		}
+		ot.Recurrence = requestedRecurrence
 	}
 
 	// If the task is being moved between projects, make sure to move the bucket + index as well
@@ -1504,7 +1510,10 @@ func (t *Task) updateSingleTask(s *xorm.Session, a web.Auth, fields []string) (e
 	preRepeatDescription := t.Description
 
 	// When a repeating task is marked as done, we update all deadlines and reminders and set it as undone
-	updateDoneAt := updateDone(&ot, t)
+	updateDoneAt, err := updateDoneWithError(&ot, t)
+	if err != nil {
+		return err
+	}
 	if updateDoneAt {
 		colsToUpdate = append(colsToUpdate, "done_at")
 	}
@@ -1973,6 +1982,114 @@ func shiftTime(t, from, to time.Time) time.Time {
 	return t.AddDate(years, 0, 0).Add(rest)
 }
 
+func taskRecurrenceAnchor(task *Task) (time.Time, bool) {
+	if !task.DueDate.IsZero() {
+		return task.DueDate, true
+	}
+	if !task.StartDate.IsZero() {
+		return task.StartDate, true
+	}
+	if !task.EndDate.IsZero() {
+		return task.EndDate, true
+	}
+
+	return time.Time{}, false
+}
+
+func recurrenceCompletionAnchor(completedAt, scheduled time.Time) time.Time {
+	if scheduled.IsZero() {
+		return completedAt
+	}
+
+	completed := completedAt.In(scheduled.Location())
+
+	return time.Date(
+		completed.Year(),
+		completed.Month(),
+		completed.Day(),
+		scheduled.Hour(),
+		scheduled.Minute(),
+		scheduled.Second(),
+		scheduled.Nanosecond(),
+		scheduled.Location(),
+	)
+}
+
+func shiftTaskDatesForRecurrence(oldTask, newTask *Task, from, to time.Time) {
+	if !oldTask.DueDate.IsZero() {
+		newTask.DueDate = shiftTime(oldTask.DueDate, from, to)
+	}
+	if !oldTask.StartDate.IsZero() {
+		newTask.StartDate = shiftTime(oldTask.StartDate, from, to)
+	}
+	if !oldTask.EndDate.IsZero() {
+		newTask.EndDate = shiftTime(oldTask.EndDate, from, to)
+	}
+
+	if len(oldTask.Reminders) > 0 {
+		newTask.Reminders = make([]*TaskReminder, len(oldTask.Reminders))
+
+		for i, reminder := range oldTask.Reminders {
+			if reminder == nil {
+				continue
+			}
+
+			copied := *reminder
+			if !copied.Reminder.IsZero() {
+				copied.Reminder = shiftTime(copied.Reminder, from, to)
+			}
+
+			newTask.Reminders[i] = &copied
+		}
+	}
+}
+
+func setTaskDatesRecurrence(oldTask, newTask *Task, completedAt time.Time) error {
+	rule := oldTask.Recurrence
+	if rule == nil {
+		return nil
+	}
+
+	scheduled, hasScheduledDate := taskRecurrenceAnchor(oldTask)
+
+	var (
+		next time.Time
+		err  error
+	)
+
+	switch rule.Basis {
+	case TaskRecurrenceBasisSchedule:
+		if hasScheduledDate {
+			next, err = nextTaskRecurrenceAfter(rule, scheduled, completedAt)
+		} else {
+			next, err = nextTaskRecurrenceOccurrence(rule, completedAt)
+		}
+
+	case TaskRecurrenceBasisCompletion:
+		anchor := recurrenceCompletionAnchor(completedAt, scheduled)
+		next, err = nextTaskRecurrenceOccurrence(rule, anchor)
+
+	default:
+		return ErrInvalidTaskRecurrence{
+			Reason: fmt.Sprintf("invalid recurrence basis: %d", rule.Basis),
+		}
+	}
+
+	if err != nil {
+		return ErrInvalidTaskRecurrence{Reason: err.Error()}
+	}
+
+	if hasScheduledDate {
+		shiftTaskDatesForRecurrence(oldTask, newTask, scheduled, next)
+	} else {
+		newTask.DueDate = next
+		newTask.Reminders = oldTask.Reminders
+	}
+
+	newTask.Done = false
+	return nil
+}
+
 var (
 	checklistTiptapCheckedRegex = regexp.MustCompile(`(data-checked=")true(")`)
 	checklistInputCheckedRegex  = regexp.MustCompile(`(<input[^>]*type=["']checkbox["'][^>]*?)\s+checked(?:=["'][^"']*["'])?`)
@@ -1992,34 +2109,44 @@ func resetDescriptionChecklist(description string) string {
 // We make a few assumptions here:
 //  1. Everything in oldTask is the truth - we figure out if we update anything at all if oldTask.RepeatAfter has a value > 0
 //  2. Because of 1., this functions should not be used to update values other than Done in the same go
-func updateDone(oldTask *Task, newTask *Task) (updateDoneAt bool) {
-	// Track if the done status changed before repeat helpers modify it
+func updateDoneWithError(oldTask *Task, newTask *Task) (updateDoneAt bool, err error) {
 	doneStatusChanged := oldTask.Done != newTask.Done
 
 	if !oldTask.Done && newTask.Done {
-		switch oldTask.RepeatMode {
-		case TaskRepeatModeMonth:
-			setTaskDatesMonthRepeat(oldTask, newTask)
-		case TaskRepeatModeFromCurrentDate:
-			setTaskDatesFromCurrentDateRepeat(oldTask, newTask)
-		case TaskRepeatModeDefault:
-			setTaskDatesDefault(oldTask, newTask)
+		completedAt := time.Now()
+
+		if oldTask.Recurrence != nil {
+			if err := setTaskDatesRecurrence(oldTask, newTask, completedAt); err != nil {
+				return false, err
+			}
+		} else {
+			switch oldTask.RepeatMode {
+			case TaskRepeatModeMonth:
+				setTaskDatesMonthRepeat(oldTask, newTask)
+			case TaskRepeatModeFromCurrentDate:
+				setTaskDatesFromCurrentDateRepeat(oldTask, newTask)
+			case TaskRepeatModeDefault:
+				setTaskDatesDefault(oldTask, newTask)
+			}
 		}
 
-		// A recurring task reopens for its next occurrence, so its checklist starts fresh.
 		if oldTask.isRepeating() && !newTask.Done {
 			newTask.Description = resetDescriptionChecklist(newTask.Description)
 		}
 
-		newTask.DoneAt = time.Now()
+		newTask.DoneAt = completedAt
 	}
 
-	// When unmarking a task as done, reset the timestamp
 	if oldTask.Done && !newTask.Done {
 		newTask.DoneAt = time.Time{}
 	}
 
-	return doneStatusChanged
+	return doneStatusChanged, nil
+}
+
+func updateDone(oldTask *Task, newTask *Task) (updateDoneAt bool) {
+	updateDoneAt, _ = updateDoneWithError(oldTask, newTask)
+	return
 }
 
 // Set the absolute trigger dates for Reminders with relative period

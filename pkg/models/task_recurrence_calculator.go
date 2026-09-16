@@ -114,6 +114,82 @@ func validateMonthlyRecurrence(rule *TaskRecurrence) error {
 	return nil
 }
 
+func nextTaskRecurrenceAfter(rule *TaskRecurrence, current, after time.Time) (time.Time, error) {
+	if rule == nil {
+		return time.Time{}, fmt.Errorf("recurrence rule is required")
+	}
+	if current.IsZero() {
+		return time.Time{}, fmt.Errorf("current recurrence occurrence is required")
+	}
+
+	switch rule.Frequency {
+	case TaskRecurrenceFrequencyMonth:
+		return nextMonthlyRecurrenceAfter(rule, current, after)
+	default:
+		return time.Time{}, fmt.Errorf("unsupported recurrence frequency: %d", rule.Frequency)
+	}
+}
+
+func nextMonthlyRecurrenceAfter(rule *TaskRecurrence, current, after time.Time) (time.Time, error) {
+	if err := validateMonthlyRecurrence(rule); err != nil {
+		return time.Time{}, err
+	}
+
+	period := monthlyRecurrenceNominalPeriod(rule, current)
+	target := recurrenceMonthStart(period, rule.Interval)
+
+	for range recurrenceSearchLimit {
+		occurrence, found := resolveMonthlyOccurrence(rule, target)
+		if found && occurrence.After(after) {
+			return occurrence, nil
+		}
+
+		target = recurrenceMonthStart(target, rule.Interval)
+	}
+
+	return time.Time{}, fmt.Errorf("could not find a future recurrence occurrence")
+}
+
+func monthlyRecurrenceNominalPeriod(rule *TaskRecurrence, occurrence time.Time) time.Time {
+	period := recurrenceMonthStart(occurrence, 0)
+
+	if rule.BySetPos != 5 ||
+		rule.MissingPolicy != TaskRecurrenceMissingPolicyNextPeriod {
+		return period
+	}
+
+	weekday, ok := recurrenceWeekdayFromMask(rule.ByWeekdays)
+	if !ok {
+		return period
+	}
+
+	firstDay, found := ordinalWeekdayInMonth(
+		occurrence.Year(),
+		occurrence.Month(),
+		weekday,
+		1,
+		occurrence.Location(),
+	)
+	if !found || occurrence.Day() != firstDay {
+		return period
+	}
+
+	previous := recurrenceMonthStart(occurrence, -1)
+	_, previousHasFifth := ordinalWeekdayInMonth(
+		previous.Year(),
+		previous.Month(),
+		weekday,
+		5,
+		previous.Location(),
+	)
+
+	if !previousHasFifth {
+		return previous
+	}
+
+	return period
+}
+
 func nextMonthlyRecurrenceOccurrence(rule *TaskRecurrence, anchor time.Time) (time.Time, error) {
 	if anchor.IsZero() {
 		return time.Time{}, fmt.Errorf("recurrence anchor is required")
