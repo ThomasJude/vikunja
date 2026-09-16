@@ -1244,7 +1244,7 @@
       "everyMonths": "Every {interval} months",
       "summaryOnDay": "on day {day}",
       "summaryOnOrdinal": "on the {ordinal} {weekday}",
-      "summaryBasedOn": "Based on: {basis}",
+      "repeatsFromCompletion": "Repeats from completion date",
       "standardMonthlySummary": "Standard monthly schedule",
       "standardIntervalSummary": "Every {amount} {unit}",
       "daily": "Daily",
