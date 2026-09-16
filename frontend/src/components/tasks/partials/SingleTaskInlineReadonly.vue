@@ -80,7 +80,7 @@
 				<Icon icon="align-left" />
 			</span>
 			<span
-				v-if="task.repeatAfter.amount > 0"
+				v-if="task.recurrence !== null || task.repeatAfter.amount > 0"
 				class="project-task-icon"
 			>
 				<Icon icon="history" />
