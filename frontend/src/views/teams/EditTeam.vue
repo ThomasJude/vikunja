@@ -110,6 +110,42 @@
 					{{ $t('team.edit.mustSelectUser') }}
 				</p>
 			</form>
+
+			<form
+				v-if="userIsAdmin"
+				class="mt-4"
+				@submit.prevent="addChildTeam"
+			>
+				<div class="field has-addons">
+					<div class="control is-expanded">
+						<Multiselect
+							v-model="newChildTeam"
+							:loading="teamService.loading"
+							:placeholder="$t('team.edit.children.search')"
+							:search-results="foundTeams"
+							label="name"
+							@search="findTeam"
+						/>
+					</div>
+					<div class="control">
+						<XButton
+							:loading="teamRelationService.loading"
+							icon="plus"
+							@click="addChildTeam"
+						>
+							{{ $t('team.edit.children.add') }}
+						</XButton>
+					</div>
+				</div>
+
+				<p
+					v-if="showMustSelectTeamError"
+					class="help is-danger"
+				>
+					{{ $t('team.edit.children.mustSelect') }}
+				</p>
+			</form>
+
 			<div class="has-horizontal-overflow">
 				<table class="table has-actions is-striped is-hoverable is-fullwidth">
 					<tbody>
@@ -165,75 +201,59 @@
 								/>
 							</td>
 						</tr>
-					</tbody>
-				</table>
-			</div>
-		</Card>
 
-		<Card
-			v-if="userIsAdmin"
-			class="is-fullwidth has-overflow"
-			:title="$t('team.edit.children.title')"
-			:padding="false"
-		>
-			<div class="p-4">
-				<p class="mbe-4">
-					{{ $t('team.edit.children.description') }}
-				</p>
-
-				<form @submit.prevent="addChildTeam">
-					<div class="field has-addons">
-						<div class="control is-expanded">
-							<Multiselect
-								v-model="newChildTeam"
-								:loading="teamService.loading"
-								:placeholder="$t('team.edit.children.search')"
-								:search-results="foundTeams"
-								label="name"
-								@search="findTeam"
-							/>
-						</div>
-						<div class="control">
-							<XButton
-								:loading="teamRelationService.loading"
-								icon="plus"
-								@click="addChildTeam"
-							>
-								{{ $t('team.edit.children.add') }}
-							</XButton>
-						</div>
-					</div>
-
-					<p
-						v-if="showMustSelectTeamError"
-						class="help is-danger"
-					>
-						{{ $t('team.edit.children.mustSelect') }}
-					</p>
-				</form>
-			</div>
-
-			<div
-				v-if="childTeams.length > 0"
-				class="has-horizontal-overflow"
-			>
-				<table class="table has-actions is-striped is-hoverable is-fullwidth">
-					<tbody>
 						<tr
-							v-for="child in childTeams"
-							:key="child.id"
+							v-for="relation in sortedChildTeams"
+							:key="`team-${relation.childTeam.id}`"
 						>
 							<td>
-								{{ child.name }}
+								<span class="icon is-small mie-2">
+									<Icon icon="users" />
+								</span>
+								{{ relation.childTeam.name }}
 							</td>
-							<td class="actions">
+
+							<td>
+								{{ $t('team.edit.team') }}
+							</td>
+
+							<td class="type">
+								<template v-if="relation.admin">
+									<span class="icon is-small">
+										<Icon icon="lock" />
+									</span>
+									{{ $t('team.attributes.admin') }}
+								</template>
+								<template v-else>
+									<span class="icon is-small">
+										<Icon icon="users" />
+									</span>
+									{{ $t('team.attributes.member') }}
+								</template>
+							</td>
+
+							<td
+								v-if="userIsAdmin"
+								class="actions"
+							>
+								<XButton
+									:loading="teamRelationService.loading"
+									class="mie-2"
+									@click="() => toggleChildTeamType(relation)"
+								>
+									{{ relation.admin
+										? $t('team.edit.makeMember')
+										: $t('team.edit.makeAdmin')
+									}}
+								</XButton>
+
 								<XButton
 									:loading="teamRelationService.loading"
 									danger
 									icon="trash-alt"
 									:aria-label="$t('team.edit.children.remove.header')"
 									@click="() => {
-										childTeamToDelete = child
+										childTeamToDelete = relation.childTeam
 										showChildTeamDeleteModal = true
 									}"
 								/>
@@ -242,14 +262,9 @@
 					</tbody>
 				</table>
 			</div>
-
-			<p
-				v-else
-				class="p-4 pt-0"
-			>
-				{{ $t('team.edit.children.empty') }}
-			</p>
 		</Card>
+
+
 
 		<XButton
 			v-if="team && !team.externalId"
@@ -361,6 +376,7 @@ import {useConfigStore} from '@/stores/config'
 import type {ITeam} from '@/modelTypes/ITeam'
 import type {IUser} from '@/modelTypes/IUser'
 import type {ITeamMember} from '@/modelTypes/ITeamMember'
+import type {ITeamRelation} from '@/modelTypes/ITeamRelation'
 
 const authStore = useAuthStore()
 const configStore = useConfigStore()
@@ -383,6 +399,12 @@ const sortedMembers = computed(() => {
 	)
 })
 
+const sortedChildTeams = computed(() => {
+	return [...childTeams.value].sort((a, b) =>
+		a.childTeam.name.localeCompare(b.childTeam.name, undefined, {sensitivity: 'base'}),
+	)
+})
+
 const teamService = ref<TeamService>(new TeamService())
 const teamMemberService = ref<TeamMemberService>(new TeamMemberService())
 const teamRelationService = ref<TeamRelationService>(new TeamRelationService())
@@ -394,7 +416,7 @@ const memberToDelete = ref<ITeamMember>()
 const newMember = ref<IUser>()
 const foundUsers = ref<IUser[]>()
 
-const childTeams = ref<ITeam[]>([])
+const childTeams = ref<ITeamRelation[]>([])
 const foundTeams = ref<ITeam[]>([])
 const newChildTeam = ref<ITeam>()
 const childTeamToDelete = ref<ITeam>()
@@ -477,7 +499,7 @@ async function findTeam(query: string) {
 	}
 
 	const teams = await teamService.value.getAll({}, {s: query})
-	const childTeamIds = new Set(childTeams.value.map(team => team.id))
+	const childTeamIds = new Set(childTeams.value.map(relation => relation.childTeam.id))
 
 	foundTeams.value = teams.filter((candidate: ITeam) =>
 		candidate.id !== teamId.value &&
@@ -503,6 +525,21 @@ async function addChildTeam() {
 
 	await loadChildTeams()
 	success({message: t('team.edit.children.addedSuccess')})
+}
+
+async function toggleChildTeamType(relation: ITeamRelation) {
+	const updated = await teamRelationService.value.toggleAdmin(
+		teamId.value,
+		relation.childTeam.id,
+	)
+
+	relation.admin = updated.admin
+
+	success({
+		message: relation.admin
+			? t('team.edit.teamMadeAdmin')
+			: t('team.edit.teamMadeMember'),
+	})
 }
 
 async function deleteChildTeam() {

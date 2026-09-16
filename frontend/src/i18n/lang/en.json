@@ -1283,7 +1283,7 @@
       "mustSelectUser": "Please select a user.",
       "children": {
         "title": "Child Teams",
-        "description": "Members of child teams inherit the project access granted to this team. Team administration is not inherited.",
+        "description": "Nested teams inherit this team's project access. Set a nested team as Admin to allow its members to manage this team.",
         "search": "Type to search a team…",
         "add": "Add team",
         "empty": "No child teams have been added.",
@@ -1312,7 +1312,10 @@
         "text1": "Are you sure you want to leave this team?",
         "text2": "You will lose access to all projects this team has access to. If you change your mind you'll need a team admin to add you again.",
         "success": "You have successfully left the team."
-      }
+      },
+      "team": "Team",
+      "teamMadeMember": "The nested team was successfully made a member.",
+      "teamMadeAdmin": "The nested team was successfully made an admin."
     },
     "attributes": {
       "name": "Team Name",
