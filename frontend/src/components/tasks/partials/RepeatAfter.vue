@@ -8,7 +8,7 @@
 				:disabled="disabled || undefined"
 				@click="setEditorMode('simple')"
 			>
-				{{ $t('task.repeat.simple') }}
+				{{ $t('task.repeat.standard') }}
 			</XButton>
 			<XButton
 				variant="secondary"
@@ -17,7 +17,7 @@
 				:disabled="disabled || undefined"
 				@click="setEditorMode('advanced')"
 			>
-				{{ $t('task.repeat.advancedMonthly') }}
+				{{ $t('task.repeat.advanced') }}
 			</XButton>
 		</div>
 
@@ -121,16 +121,19 @@
 		</template>
 
 		<div
-			v-else-if="task.recurrence"
+			v-else
 			class="advanced-repeat"
 		>
+			<div class="advanced-repeat-title">
+				{{ $t('task.repeat.monthly') }}
+			</div>
 			<div class="repeat-row">
 				<label for="recurrenceInterval">
 					{{ $t('task.repeat.every') }}
 				</label>
 				<input
 					id="recurrenceInterval"
-					v-model.number="task.recurrence.interval"
+					v-model.number="advancedRecurrence.interval"
 					class="input recurrence-number"
 					type="number"
 					min="1"
@@ -168,7 +171,7 @@
 					</label>
 					<input
 						id="recurrenceMonthDay"
-						v-model.number="task.recurrence.byMonthDay"
+						v-model.number="advancedRecurrence.byMonthDay"
 						class="input recurrence-number"
 						type="number"
 						min="1"
@@ -185,7 +188,7 @@
 					<div class="select">
 						<select
 							id="recurrenceMissingDate"
-							v-model.number="task.recurrence.missingPolicy"
+							v-model.number="advancedRecurrence.missingPolicy"
 							:disabled="disabled || undefined"
 							@change="updateAdvancedData"
 						>
@@ -206,7 +209,7 @@
 
 					<div class="select">
 						<select
-							v-model.number="task.recurrence.bySetPos"
+							v-model.number="advancedRecurrence.bySetPos"
 							:disabled="disabled || undefined"
 							@change="updateOrdinalPosition"
 						>
@@ -222,7 +225,7 @@
 
 					<div class="select">
 						<select
-							v-model.number="task.recurrence.byWeekdays"
+							v-model.number="advancedRecurrence.byWeekdays"
 							:disabled="disabled || undefined"
 							@change="updateAdvancedData"
 						>
@@ -238,7 +241,7 @@
 				</div>
 
 				<div
-					v-if="task.recurrence.bySetPos === 5"
+					v-if="advancedRecurrence.bySetPos === 5"
 					class="repeat-row"
 				>
 					<label for="recurrenceMissingOrdinal">
@@ -247,7 +250,7 @@
 					<div class="select">
 						<select
 							id="recurrenceMissingOrdinal"
-							v-model.number="task.recurrence.missingPolicy"
+							v-model.number="advancedRecurrence.missingPolicy"
 							:disabled="disabled || undefined"
 							@change="updateAdvancedData"
 						>
@@ -272,7 +275,7 @@
 				<div class="select">
 					<select
 						id="recurrenceBasis"
-						v-model.number="task.recurrence.basis"
+						v-model.number="advancedRecurrence.basis"
 						:disabled="disabled || undefined"
 						@change="updateAdvancedData"
 					>
@@ -325,6 +328,7 @@ const {t} = useI18n({useScope: 'global'})
 const task = ref<ITask>(new TaskModel())
 const editorMode = ref<EditorMode>('simple')
 const advancedRuleType = ref<AdvancedRuleType>('monthDay')
+const advancedRecurrence = ref<ITaskRecurrence>(createDefaultRecurrence())
 
 const repeatAfter = reactive({
 	amount: 0,
@@ -365,11 +369,13 @@ watch(
 
 		editorMode.value = value.recurrence ? 'advanced' : 'simple'
 
-		if (value.recurrence) {
-			advancedRuleType.value = value.recurrence.byMonthDay > 0
-				? 'monthDay'
-				: 'ordinal'
-		}
+		advancedRecurrence.value = value.recurrence
+			? {...value.recurrence}
+			: createDefaultRecurrence()
+
+		advancedRuleType.value = advancedRecurrence.value.byMonthDay > 0
+			? 'monthDay'
+			: 'ordinal'
 	},
 	{
 		immediate: true,
@@ -404,24 +410,14 @@ function setEditorMode(mode: EditorMode) {
 	editorMode.value = mode
 
 	if (mode === 'advanced') {
-		if (!task.value.recurrence) {
-			task.value.recurrence = createDefaultRecurrence()
-		}
+		advancedRecurrence.value = task.value.recurrence
+			? {...task.value.recurrence}
+			: createDefaultRecurrence()
 
-		task.value.repeatMode = TASK_REPEAT_MODES.REPEAT_MODE_DEFAULT
-		Object.assign(task.value.repeatAfter, {
-			amount: 0,
-			type: 'days',
-		})
-
-		advancedRuleType.value = task.value.recurrence.byMonthDay > 0
+		advancedRuleType.value = advancedRecurrence.value.byMonthDay > 0
 			? 'monthDay'
 			: 'ordinal'
-	} else {
-		task.value.recurrence = null
 	}
-
-	emit('update:modelValue', task.value)
 }
 
 function updateSimpleData() {
@@ -448,10 +444,7 @@ function setRepeatAfter(amount: number, type: IRepeatAfter['type']) {
 }
 
 function setAdvancedRuleType() {
-	const recurrence = task.value.recurrence
-	if (!recurrence) {
-		return
-	}
+	const recurrence = advancedRecurrence.value
 
 	if (advancedRuleType.value === 'monthDay') {
 		recurrence.byMonthDay = defaultMonthDay()
@@ -469,10 +462,7 @@ function setAdvancedRuleType() {
 }
 
 function updateOrdinalPosition() {
-	const recurrence = task.value.recurrence
-	if (!recurrence) {
-		return
-	}
+	const recurrence = advancedRecurrence.value
 
 	if (recurrence.bySetPos === 5) {
 		if (
@@ -490,10 +480,7 @@ function updateOrdinalPosition() {
 }
 
 function updateAdvancedData() {
-	const recurrence = task.value.recurrence
-	if (!recurrence) {
-		return
-	}
+	const recurrence = advancedRecurrence.value
 
 	if (recurrence.interval < 1) {
 		error({message: t('task.repeat.invalidInterval')})
@@ -509,6 +496,7 @@ function updateAdvancedData() {
 	}
 
 	recurrence.frequency = TASK_RECURRENCE_FREQUENCIES.MONTH
+	task.value.recurrence = {...recurrence}
 	task.value.repeatMode = TASK_REPEAT_MODES.REPEAT_MODE_DEFAULT
 
 	Object.assign(task.value.repeatAfter, {
@@ -546,6 +534,11 @@ p {
 
 .advanced-repeat {
 	margin-block-start: 1rem;
+}
+
+.advanced-repeat-title {
+	font-weight: 600;
+	margin-block-end: 1rem;
 }
 
 .button-group {
