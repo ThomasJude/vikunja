@@ -171,3 +171,51 @@ describe('TaskService.bulkCreate', () => {
 		expect(tasks[1]?.title).toBe('b')
 	})
 })
+
+
+describe('TaskService recurrence', () => {
+	it('serializes only writable recurrence fields', () => {
+		const task = new TaskModel({
+			title: 'recurring task',
+			projectId: 42,
+			recurrence: {
+				id: 99,
+				taskId: 123,
+				frequency: 3,
+				interval: 2,
+				basis: 0,
+				byWeekdays: 0,
+				byMonth: 0,
+				byMonthDay: 31,
+				bySetPos: 0,
+				missingPolicy: 1,
+				created: '2026-09-16T00:00:00Z',
+				updated: '2026-09-16T00:00:00Z',
+			},
+		})
+
+		const processed = new TaskService().processModel(task) as unknown as Record<string, unknown>
+
+		expect(processed.recurrence).toEqual({
+			frequency: 3,
+			interval: 2,
+			basis: 0,
+			by_weekdays: 0,
+			by_month: 0,
+			by_month_day: 31,
+			by_set_pos: 0,
+			missing_policy: 1,
+		})
+	})
+
+	it('keeps null recurrence when removing an advanced rule', () => {
+		const task = new TaskModel({
+			title: 'normal task',
+			projectId: 42,
+		})
+
+		const processed = new TaskService().processModel(task) as unknown as Record<string, unknown>
+
+		expect(processed.recurrence).toBeNull()
+	})
+})
