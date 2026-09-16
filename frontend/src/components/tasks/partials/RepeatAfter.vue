@@ -1,11 +1,32 @@
 <template>
 	<div class="control repeat-after-input">
 		<div
-			v-if="hasSavedSchedule"
+			v-if="hasSavedSchedule && editorMode === null"
 			class="box saved-schedule"
 		>
-			<div class="saved-schedule-header">
-				<strong>{{ $t('task.repeat.activeSchedule') }}</strong>
+			<div class="saved-schedule-content">
+				<div class="saved-schedule-copy">
+					<div class="saved-schedule-title">
+						<span
+							class="saved-schedule-icon"
+							aria-hidden="true"
+						>
+							✓
+						</span>
+						<strong>{{ $t('task.repeat.activeSchedule') }}</strong>
+					</div>
+
+					<p class="saved-schedule-summary">
+						{{ savedScheduleSummary }}
+					</p>
+					<p
+						v-if="savedScheduleBasis"
+						class="saved-schedule-basis"
+					>
+						{{ savedScheduleBasis }}
+					</p>
+				</div>
+
 				<div class="saved-schedule-actions">
 					<XButton
 						variant="secondary"
@@ -17,7 +38,7 @@
 					</XButton>
 					<XButton
 						variant="secondary"
-						class="is-small"
+						class="is-small clear-schedule-button"
 						:disabled="disabled || undefined"
 						@click="clearSchedule"
 					>
@@ -25,10 +46,12 @@
 					</XButton>
 				</div>
 			</div>
-			<p>{{ savedScheduleSummary }}</p>
 		</div>
 
-		<div class="schedule-mode-buttons mbs-2">
+		<div
+			v-if="!hasSavedSchedule || editorMode !== null"
+			class="schedule-mode-buttons mbs-2"
+		>
 			<XButton
 				variant="secondary"
 				class="is-small"
@@ -441,15 +464,14 @@ const savedScheduleSummary = computed(() => {
 	const recurrence = task.value.recurrence
 
 	if (recurrence) {
-		const basis = recurrence.basis === TASK_RECURRENCE_BASES.COMPLETION
-			? t('task.repeat.afterCompletion')
-			: t('task.repeat.onSchedule')
+		const every = recurrence.interval === 1
+			? t('task.repeat.everyMonth')
+			: t('task.repeat.everyMonths', {interval: recurrence.interval})
 
 		if (recurrence.byMonthDay > 0) {
-			return `${t('task.repeat.summaryMonthDay', {
-				interval: recurrence.interval,
+			return `${every} ${t('task.repeat.summaryOnDay', {
 				day: recurrence.byMonthDay,
-			})} · ${basis}`
+			})}`
 		}
 
 		const ordinal = ordinalPositions.find(
@@ -460,11 +482,10 @@ const savedScheduleSummary = computed(() => {
 		)
 
 		if (ordinal && weekday) {
-			return `${t('task.repeat.summaryOrdinal', {
-				interval: recurrence.interval,
+			return `${every} ${t('task.repeat.summaryOnOrdinal', {
 				ordinal: t(ordinal.label),
 				weekday: t(weekday.label),
-			})} · ${basis}`
+			})}`
 		}
 
 		return t('task.repeat.advancedSchedule')
@@ -482,6 +503,20 @@ const savedScheduleSummary = computed(() => {
 	}
 
 	return ''
+})
+
+const savedScheduleBasis = computed(() => {
+	const recurrence = task.value.recurrence
+
+	if (!recurrence) {
+		return ''
+	}
+
+	const basis = recurrence.basis === TASK_RECURRENCE_BASES.COMPLETION
+		? t('task.repeat.afterCompletion')
+		: t('task.repeat.onSchedule')
+
+	return t('task.repeat.summaryBasedOn', {basis})
 })
 
 watch(
@@ -736,26 +771,71 @@ p {
 }
 
 .saved-schedule {
+	border-inline-start: .25rem solid var(--bulma-success);
 	margin-block-end: 1rem;
+	padding: 1rem 1.125rem;
 }
 
-.saved-schedule-header {
+.saved-schedule-content {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 1rem;
-	margin-block-end: .5rem;
+	gap: 1.5rem;
+}
+
+.saved-schedule-copy {
+	min-inline-size: 0;
+}
+
+.saved-schedule-title {
+	display: flex;
+	align-items: center;
+	gap: .5rem;
+	margin-block-end: .4rem;
+}
+
+.saved-schedule-icon {
+	color: var(--bulma-success);
+	font-size: 1.1rem;
+	font-weight: 700;
+}
+
+.saved-schedule-summary {
+	margin: 0;
+	font-weight: 600;
+}
+
+.saved-schedule-basis {
+	margin: .2rem 0 0;
+	font-size: .9rem;
+	opacity: .7;
 }
 
 .saved-schedule-actions,
 .schedule-actions {
 	display: flex;
 	gap: .5rem;
+	flex-shrink: 0;
+}
+
+.clear-schedule-button {
+	color: var(--bulma-danger) !important;
 }
 
 .schedule-actions {
 	justify-content: flex-end;
 	margin-block-start: 1rem;
+}
+
+@media screen and (max-width: 768px) {
+	.saved-schedule-content {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.saved-schedule-actions {
+		justify-content: flex-end;
+	}
 }
 
 .advanced-frequency-buttons {
