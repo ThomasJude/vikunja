@@ -67,7 +67,11 @@ func validateTaskForCreation(t *Task) error {
 		return ErrTaskCannotBeEmpty{}
 	}
 
-	return validateRepeatAfter(t.RepeatAfter)
+	if err := validateRepeatAfter(t.RepeatAfter); err != nil {
+		return err
+	}
+
+	return validateTaskRecurrence(t.Recurrence)
 }
 
 // Task represents a task in a project
@@ -91,7 +95,8 @@ type Task struct {
 	// An amount in seconds this task repeats itself. If this is set, when marking the task as done, it will mark itself as "undone" and then increase all remindes and the due date by its amount.
 	RepeatAfter int64 `xorm:"bigint INDEX null" json:"repeat_after" valid:"range(0|9223372036854775807)" doc:"The interval in seconds this task repeats. When set, marking the task done re-opens it and bumps its reminders and due date by this amount."`
 	// Can have three possible values which will trigger when the task is marked as done: 0 = repeats after the amount specified in repeat_after, 1 = repeats all dates each months (ignoring repeat_after), 3 = repeats from the current date rather than the last set date.
-	RepeatMode TaskRepeatMode `xorm:"not null default 0" json:"repeat_mode" doc:"How the task repeats when marked done: 0 = after repeat_after seconds, 1 = monthly (ignores repeat_after), 2 = from the current date rather than the last set date."`
+	RepeatMode TaskRepeatMode  `xorm:"not null default 0" json:"repeat_mode" doc:"How the task repeats when marked done: 0 = after repeat_after seconds, 1 = monthly (ignores repeat_after), 2 = from the current date rather than the last set date."`
+	Recurrence *TaskRecurrence `xorm:"-" json:"recurrence,omitempty" doc:"The advanced recurrence rule for this task."`
 	// The task priority. Can be anything you want, it is possible to sort by this later.
 	Priority int64 `xorm:"bigint null" json:"priority"`
 	// When this task starts.
@@ -733,6 +738,11 @@ func addMoreInfoToTasks(s *xorm.Session, taskMap map[int64]*Task, a web.Auth, vi
 		return err
 	}
 
+	taskRecurrences, err := getTaskRecurrenceMap(s, taskIDs)
+	if err != nil {
+		return err
+	}
+
 	taskFavorites, err := getFavorites(s, taskIDs, a, FavoriteKindTask)
 	if err != nil {
 		return err
@@ -811,6 +821,7 @@ func addMoreInfoToTasks(s *xorm.Session, taskMap map[int64]*Task, a web.Auth, vi
 
 		// Add the reminders
 		task.Reminders = taskReminders[task.ID]
+		task.Recurrence = taskRecurrences[task.ID]
 
 		// Prepare the subtasks
 		task.RelatedTasks = make(RelatedTaskMap)
@@ -1075,6 +1086,12 @@ func createTasks(s *xorm.Session, projectID int64, tasks []*Task, a web.Auth, up
 		if err != nil {
 			return err
 		}
+
+		if t.Recurrence != nil {
+			if err = saveTaskRecurrence(s, t.ID, t.Recurrence); err != nil {
+				return err
+			}
+		}
 	}
 
 	taskProvidedBucket, err := resolveProvidedBuckets(s, a, projectID, tasks)
@@ -1279,6 +1296,15 @@ func (t *Task) updateSingleTask(s *xorm.Session, a web.Auth, fields []string) (e
 		return
 	}
 
+	storedRecurrences, err := getTaskRecurrenceMap(s, []int64{t.ID})
+	if err != nil {
+		return err
+	}
+	ot.Recurrence = storedRecurrences[t.ID]
+
+	requestedRecurrence := t.Recurrence
+	updateRecurrence := len(fields) == 0
+
 	if t.ProjectID == 0 {
 		t.ProjectID = ot.ProjectID
 	}
@@ -1322,15 +1348,20 @@ func (t *Task) updateSingleTask(s *xorm.Session, a web.Auth, fields []string) (e
 		for _, c := range colsToUpdate {
 			allowed[c] = true
 		}
+		allowed["recurrence"] = true
+
 		cols := []string{}
 		for _, f := range fields {
 			if !allowed[f] {
 				return ErrInvalidTaskColumn{Column: f}
 			}
-			cols = append(cols, f)
 			fieldSet[f] = true
+			if f != "recurrence" {
+				cols = append(cols, f)
+			}
 		}
 		colsToUpdate = cols
+		updateRecurrence = fieldSet["recurrence"]
 
 		if !fieldSet["title"] {
 			t.Title = ot.Title
@@ -1379,6 +1410,12 @@ func (t *Task) updateSingleTask(s *xorm.Session, a web.Auth, fields []string) (e
 
 	if err := validateRepeatAfter(t.RepeatAfter); err != nil {
 		return err
+	}
+
+	if updateRecurrence {
+		if err := validateTaskRecurrence(requestedRecurrence); err != nil {
+			return err
+		}
 	}
 
 	// If the task is being moved between projects, make sure to move the bucket + index as well
@@ -1606,13 +1643,33 @@ func (t *Task) updateSingleTask(s *xorm.Session, a web.Auth, fields []string) (e
 		ot.CoverImageAttachmentID = 0
 	}
 
-	_, err = s.ID(t.ID).
-		Cols(colsToUpdate...).
-		Update(&ot)
-	*t = ot
-	if err != nil {
-		return err
+	if updateRecurrence {
+		ot.Recurrence = requestedRecurrence
 	}
+
+	if len(colsToUpdate) > 0 {
+		_, err = s.ID(t.ID).
+			Cols(colsToUpdate...).
+			Update(&ot)
+		if err != nil {
+			return err
+		}
+	}
+
+	if updateRecurrence {
+		if err = saveTaskRecurrence(s, t.ID, requestedRecurrence); err != nil {
+			return err
+		}
+		ot.Recurrence = requestedRecurrence
+
+		if len(colsToUpdate) == 0 {
+			if err = updateTaskLastUpdated(s, &ot); err != nil {
+				return err
+			}
+		}
+
+	}
+	*t = ot
 
 	// Get the task updated timestamp in a new struct - if we'd just try to put it into t which we already have, it
 	// would still contain the old updated date.
@@ -2188,6 +2245,11 @@ func hardDeleteTask(s *xorm.Session, t *Task) (err error) {
 
 	// Delete all reminders
 	_, err = s.Where("task_id = ?", t.ID).Delete(&TaskReminder{})
+	if err != nil {
+		return
+	}
+
+	_, err = s.Where("task_id = ?", t.ID).Delete(&TaskRecurrence{})
 	if err != nil {
 		return
 	}

@@ -23,6 +23,25 @@ import (
 
 const recurrenceSearchLimit = 4800
 
+func validateTaskRecurrence(rule *TaskRecurrence) error {
+	if rule == nil {
+		return nil
+	}
+
+	switch rule.Frequency {
+	case TaskRecurrenceFrequencyMonth:
+		if err := validateMonthlyRecurrence(rule); err != nil {
+			return ErrInvalidTaskRecurrence{Reason: err.Error()}
+		}
+	default:
+		return ErrInvalidTaskRecurrence{
+			Reason: fmt.Sprintf("unsupported recurrence frequency: %d", rule.Frequency),
+		}
+	}
+
+	return nil
+}
+
 func nextTaskRecurrenceOccurrence(rule *TaskRecurrence, anchor time.Time) (time.Time, error) {
 	if rule == nil {
 		return time.Time{}, fmt.Errorf("recurrence rule is required")

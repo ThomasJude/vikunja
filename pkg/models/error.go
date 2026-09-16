@@ -642,6 +642,30 @@ func (err ErrInvalidTaskRepeatInterval) HTTPError() web.HTTPError {
 	}
 }
 
+// ErrInvalidTaskRecurrence represents an invalid advanced recurrence rule.
+type ErrInvalidTaskRecurrence struct {
+	Reason string
+}
+
+func IsErrInvalidTaskRecurrence(err error) bool {
+	_, ok := err.(ErrInvalidTaskRecurrence)
+	return ok
+}
+
+func (err ErrInvalidTaskRecurrence) Error() string {
+	return fmt.Sprintf("Invalid task recurrence. [Reason: %s]", err.Reason)
+}
+
+const ErrCodeInvalidTaskRecurrence = 4032
+
+func (err ErrInvalidTaskRecurrence) HTTPError() web.HTTPError {
+	return web.HTTPError{
+		HTTPCode: http.StatusBadRequest,
+		Code:     ErrCodeInvalidTaskRecurrence,
+		Message:  "Invalid task recurrence: " + err.Reason,
+	}
+}
+
 // ErrInvalidBulkTaskCreationCount represents an error where a bulk task creation request has no tasks or more than the maximum.
 type ErrInvalidBulkTaskCreationCount struct {
 	Count int
