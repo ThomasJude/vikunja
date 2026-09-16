@@ -1,14 +1,14 @@
 <template>
 	<div class="control repeat-after-input">
-		<div class="button-group mbs-2">
+		<div class="schedule-mode-buttons mbs-2">
 			<XButton
 				variant="secondary"
 				class="is-small"
-				:class="{'is-active': editorMode === 'simple'}"
+				:class="{'is-active': editorMode === 'standard'}"
 				:disabled="disabled || undefined"
-				@click="setEditorMode('simple')"
+				@click="setEditorMode('standard')"
 			>
-				{{ $t('task.repeat.standard') }}
+				{{ $t('task.repeat.standardSchedule') }}
 			</XButton>
 			<XButton
 				variant="secondary"
@@ -17,11 +17,11 @@
 				:disabled="disabled || undefined"
 				@click="setEditorMode('advanced')"
 			>
-				{{ $t('task.repeat.advanced') }}
+				{{ $t('task.repeat.advancedSchedule') }}
 			</XButton>
 		</div>
 
-		<template v-if="editorMode === 'simple'">
+		<template v-if="editorMode === 'standard'">
 			<div class="button-group mbs-2">
 				<XButton
 					variant="secondary"
@@ -121,173 +121,205 @@
 		</template>
 
 		<div
-			v-else
+			v-else-if="editorMode === 'advanced'"
 			class="advanced-repeat"
 		>
-			<div class="advanced-repeat-title">
-				{{ $t('task.repeat.monthly') }}
-			</div>
-			<div class="repeat-row">
-				<label for="recurrenceInterval">
-					{{ $t('task.repeat.every') }}
-				</label>
-				<input
-					id="recurrenceInterval"
-					v-model.number="advancedRecurrence.interval"
-					class="input recurrence-number"
-					type="number"
-					min="1"
-					:disabled="disabled || undefined"
-					@change="updateAdvancedData"
+			<div class="button-group advanced-frequency-buttons">
+				<XButton
+					variant="secondary"
+					class="is-small"
+					disabled
 				>
-				<span>{{ $t('task.repeat.months') }}</span>
+					{{ $t('task.repeat.daily') }}
+				</XButton>
+				<XButton
+					variant="secondary"
+					class="is-small"
+					disabled
+				>
+					{{ $t('task.repeat.weekly') }}
+				</XButton>
+				<XButton
+					variant="secondary"
+					class="is-small"
+					:class="{'is-active': advancedFrequency === 'monthly'}"
+					:disabled="disabled || undefined"
+					@click="selectAdvancedFrequency('monthly')"
+				>
+					{{ $t('task.repeat.monthly') }}
+				</XButton>
+				<XButton
+					variant="secondary"
+					class="is-small"
+					disabled
+				>
+					{{ $t('task.repeat.yearly') }}
+				</XButton>
 			</div>
 
-			<div class="repeat-row">
-				<label for="recurrenceRule">
-					{{ $t('task.repeat.rule') }}
-				</label>
-				<div class="select">
-					<select
-						id="recurrenceRule"
-						v-model="advancedRuleType"
-						:disabled="disabled || undefined"
-						@change="setAdvancedRuleType"
-					>
-						<option value="monthDay">
-							{{ $t('task.repeat.dayOfMonth') }}
-						</option>
-						<option value="ordinal">
-							{{ $t('task.repeat.ordinalWeekday') }}
-						</option>
-					</select>
-				</div>
-			</div>
-
-			<template v-if="advancedRuleType === 'monthDay'">
+			<template v-if="advancedFrequency === 'monthly'">
 				<div class="repeat-row">
-					<label for="recurrenceMonthDay">
-						{{ $t('task.repeat.day') }}
+					<label for="recurrenceInterval">
+						{{ $t('task.repeat.every') }}
 					</label>
 					<input
-						id="recurrenceMonthDay"
-						v-model.number="advancedRecurrence.byMonthDay"
+						id="recurrenceInterval"
+						v-model.number="advancedRecurrence.interval"
 						class="input recurrence-number"
 						type="number"
 						min="1"
-						max="31"
 						:disabled="disabled || undefined"
 						@change="updateAdvancedData"
 					>
+					<span>{{ $t('task.repeat.months') }}</span>
 				</div>
 
 				<div class="repeat-row">
-					<label for="recurrenceMissingDate">
-						{{ $t('task.repeat.ifDateMissing') }}
+					<label for="recurrenceRule">
+						{{ $t('task.repeat.rule') }}
 					</label>
 					<div class="select">
 						<select
-							id="recurrenceMissingDate"
-							v-model.number="advancedRecurrence.missingPolicy"
+							id="recurrenceRule"
+							v-model="advancedRuleType"
+							:disabled="disabled || undefined"
+							@change="setAdvancedRuleType"
+						>
+							<option value="monthDay">
+								{{ $t('task.repeat.dayOfMonth') }}
+							</option>
+							<option value="ordinal">
+								{{ $t('task.repeat.ordinalWeekday') }}
+							</option>
+						</select>
+					</div>
+				</div>
+
+				<template v-if="advancedRuleType === 'monthDay'">
+					<div class="repeat-row">
+						<label for="recurrenceMonthDay">
+							{{ $t('task.repeat.day') }}
+						</label>
+						<input
+							id="recurrenceMonthDay"
+							v-model.number="advancedRecurrence.byMonthDay"
+							class="input recurrence-number"
+							type="number"
+							min="1"
+							max="31"
 							:disabled="disabled || undefined"
 							@change="updateAdvancedData"
 						>
-							<option :value="TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID">
-								{{ $t('task.repeat.useLastValidDay') }}
+					</div>
+
+					<div class="repeat-row">
+						<label for="recurrenceMissingDate">
+							{{ $t('task.repeat.ifDateMissing') }}
+						</label>
+						<div class="select">
+							<select
+								id="recurrenceMissingDate"
+								v-model.number="advancedRecurrence.missingPolicy"
+								:disabled="disabled || undefined"
+								@change="updateAdvancedData"
+							>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID">
+									{{ $t('task.repeat.useLastValidDay') }}
+								</option>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.SKIP">
+									{{ $t('task.repeat.skipMonth') }}
+								</option>
+							</select>
+						</div>
+					</div>
+				</template>
+
+				<template v-else>
+					<div class="repeat-row">
+						<label>{{ $t('task.repeat.onThe') }}</label>
+
+						<div class="select">
+							<select
+								v-model.number="advancedRecurrence.bySetPos"
+								:disabled="disabled || undefined"
+								@change="updateOrdinalPosition"
+							>
+								<option
+									v-for="position in ordinalPositions"
+									:key="position.value"
+									:value="position.value"
+								>
+									{{ $t(position.label) }}
+								</option>
+							</select>
+						</div>
+
+						<div class="select">
+							<select
+								v-model.number="advancedRecurrence.byWeekdays"
+								:disabled="disabled || undefined"
+								@change="updateAdvancedData"
+							>
+								<option
+									v-for="weekday in weekdays"
+									:key="weekday.value"
+									:value="weekday.value"
+								>
+									{{ $t(weekday.label) }}
+								</option>
+							</select>
+						</div>
+					</div>
+
+					<div
+						v-if="advancedRecurrence.bySetPos === 5"
+						class="repeat-row"
+					>
+						<label for="recurrenceMissingOrdinal">
+							{{ $t('task.repeat.ifFifthMissing') }}
+						</label>
+						<div class="select">
+							<select
+								id="recurrenceMissingOrdinal"
+								v-model.number="advancedRecurrence.missingPolicy"
+								:disabled="disabled || undefined"
+								@change="updateAdvancedData"
+							>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.SKIP">
+									{{ $t('task.repeat.skipMonth') }}
+								</option>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.LAST_OCCURRENCE">
+									{{ $t('task.repeat.useLastOccurrence') }}
+								</option>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.NEXT_PERIOD">
+									{{ $t('task.repeat.useFirstNextMonth') }}
+								</option>
+							</select>
+						</div>
+					</div>
+				</template>
+
+				<div class="repeat-row">
+					<label for="recurrenceBasis">
+						{{ $t('task.repeat.basis') }}
+					</label>
+					<div class="select">
+						<select
+							id="recurrenceBasis"
+							v-model.number="advancedRecurrence.basis"
+							:disabled="disabled || undefined"
+							@change="updateAdvancedData"
+						>
+							<option :value="TASK_RECURRENCE_BASES.SCHEDULE">
+								{{ $t('task.repeat.onSchedule') }}
 							</option>
-							<option :value="TASK_RECURRENCE_MISSING_POLICIES.SKIP">
-								{{ $t('task.repeat.skipMonth') }}
+							<option :value="TASK_RECURRENCE_BASES.COMPLETION">
+								{{ $t('task.repeat.afterCompletion') }}
 							</option>
 						</select>
 					</div>
 				</div>
 			</template>
-
-			<template v-else>
-				<div class="repeat-row">
-					<label>{{ $t('task.repeat.onThe') }}</label>
-
-					<div class="select">
-						<select
-							v-model.number="advancedRecurrence.bySetPos"
-							:disabled="disabled || undefined"
-							@change="updateOrdinalPosition"
-						>
-							<option
-								v-for="position in ordinalPositions"
-								:key="position.value"
-								:value="position.value"
-							>
-								{{ $t(position.label) }}
-							</option>
-						</select>
-					</div>
-
-					<div class="select">
-						<select
-							v-model.number="advancedRecurrence.byWeekdays"
-							:disabled="disabled || undefined"
-							@change="updateAdvancedData"
-						>
-							<option
-								v-for="weekday in weekdays"
-								:key="weekday.value"
-								:value="weekday.value"
-							>
-								{{ $t(weekday.label) }}
-							</option>
-						</select>
-					</div>
-				</div>
-
-				<div
-					v-if="advancedRecurrence.bySetPos === 5"
-					class="repeat-row"
-				>
-					<label for="recurrenceMissingOrdinal">
-						{{ $t('task.repeat.ifFifthMissing') }}
-					</label>
-					<div class="select">
-						<select
-							id="recurrenceMissingOrdinal"
-							v-model.number="advancedRecurrence.missingPolicy"
-							:disabled="disabled || undefined"
-							@change="updateAdvancedData"
-						>
-							<option :value="TASK_RECURRENCE_MISSING_POLICIES.SKIP">
-								{{ $t('task.repeat.skipMonth') }}
-							</option>
-							<option :value="TASK_RECURRENCE_MISSING_POLICIES.LAST_OCCURRENCE">
-								{{ $t('task.repeat.useLastOccurrence') }}
-							</option>
-							<option :value="TASK_RECURRENCE_MISSING_POLICIES.NEXT_PERIOD">
-								{{ $t('task.repeat.useFirstNextMonth') }}
-							</option>
-						</select>
-					</div>
-				</div>
-			</template>
-
-			<div class="repeat-row">
-				<label for="recurrenceBasis">
-					{{ $t('task.repeat.basis') }}
-				</label>
-				<div class="select">
-					<select
-						id="recurrenceBasis"
-						v-model.number="advancedRecurrence.basis"
-						:disabled="disabled || undefined"
-						@change="updateAdvancedData"
-					>
-						<option :value="TASK_RECURRENCE_BASES.SCHEDULE">
-							{{ $t('task.repeat.onSchedule') }}
-						</option>
-						<option :value="TASK_RECURRENCE_BASES.COMPLETION">
-							{{ $t('task.repeat.afterCompletion') }}
-						</option>
-					</select>
-				</div>
-			</div>
 		</div>
 	</div>
 </template>
@@ -309,8 +341,9 @@ import {
 } from '@/modelTypes/ITaskRecurrence'
 import TaskModel from '@/models/task'
 
-type EditorMode = 'simple' | 'advanced'
+type EditorMode = 'standard' | 'advanced'
 type AdvancedRuleType = 'monthDay' | 'ordinal'
+type AdvancedFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly'
 
 const props = withDefaults(defineProps<{
 	modelValue: ITask | undefined,
@@ -326,8 +359,9 @@ const emit = defineEmits<{
 const {t} = useI18n({useScope: 'global'})
 
 const task = ref<ITask>(new TaskModel())
-const editorMode = ref<EditorMode>('simple')
+const editorMode = ref<EditorMode | null>(null)
 const advancedRuleType = ref<AdvancedRuleType>('monthDay')
+const advancedFrequency = ref<AdvancedFrequency | null>(null)
 const advancedRecurrence = ref<ITaskRecurrence>(createDefaultRecurrence())
 
 const repeatAfter = reactive({
@@ -366,8 +400,6 @@ watch(
 		if (typeof value.repeatAfter !== 'undefined') {
 			Object.assign(repeatAfter, value.repeatAfter)
 		}
-
-		editorMode.value = value.recurrence ? 'advanced' : 'simple'
 
 		advancedRecurrence.value = value.recurrence
 			? {...value.recurrence}
@@ -408,8 +440,13 @@ function createDefaultRecurrence(): ITaskRecurrence {
 
 function setEditorMode(mode: EditorMode) {
 	editorMode.value = mode
+	advancedFrequency.value = null
+}
 
-	if (mode === 'advanced') {
+function selectAdvancedFrequency(frequency: AdvancedFrequency) {
+	advancedFrequency.value = frequency
+
+	if (frequency === 'monthly') {
 		advancedRecurrence.value = task.value.recurrence
 			? {...task.value.recurrence}
 			: createDefaultRecurrence()
@@ -536,8 +573,13 @@ p {
 	margin-block-start: 1rem;
 }
 
-.advanced-repeat-title {
-	font-weight: 600;
+.schedule-mode-buttons {
+	display: flex;
+	justify-content: center;
+	gap: .75rem;
+}
+
+.advanced-frequency-buttons {
 	margin-block-end: 1rem;
 }
 
