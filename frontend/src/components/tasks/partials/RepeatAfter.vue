@@ -1,5 +1,33 @@
 <template>
 	<div class="control repeat-after-input">
+		<div
+			v-if="hasSavedSchedule"
+			class="box saved-schedule"
+		>
+			<div class="saved-schedule-header">
+				<strong>{{ $t('task.repeat.activeSchedule') }}</strong>
+				<div class="saved-schedule-actions">
+					<XButton
+						variant="secondary"
+						class="is-small"
+						:disabled="disabled || undefined"
+						@click="editSavedSchedule"
+					>
+						{{ $t('task.repeat.editSchedule') }}
+					</XButton>
+					<XButton
+						variant="secondary"
+						class="is-small"
+						:disabled="disabled || undefined"
+						@click="clearSchedule"
+					>
+						{{ $t('task.repeat.clearSchedule') }}
+					</XButton>
+				</div>
+			</div>
+			<p>{{ savedScheduleSummary }}</p>
+		</div>
+
 		<div class="schedule-mode-buttons mbs-2">
 			<XButton
 				variant="secondary"
@@ -319,13 +347,28 @@
 						</select>
 					</div>
 				</div>
+				<div class="schedule-actions">
+					<XButton
+						variant="secondary"
+						:disabled="disabled || undefined"
+						@click="cancelAdvancedSchedule"
+					>
+						{{ $t('misc.cancel') }}
+					</XButton>
+					<XButton
+						:disabled="disabled || undefined"
+						@click="saveAdvancedSchedule"
+					>
+						{{ $t('task.repeat.saveSchedule') }}
+					</XButton>
+				</div>
 			</template>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
-import {reactive, ref, watch} from 'vue'
+import {computed, reactive, ref, watch} from 'vue'
 import {useI18n} from 'vue-i18n'
 
 import {error} from '@/message'
@@ -387,6 +430,59 @@ const weekdays = [
 	{value: 1 << 6, label: 'task.repeat.saturday'},
 	{value: 1, label: 'task.repeat.sunday'},
 ]
+
+const hasSavedSchedule = computed(() =>
+	task.value.recurrence !== null ||
+	task.value.repeatAfter.amount > 0 ||
+	task.value.repeatMode !== TASK_REPEAT_MODES.REPEAT_MODE_DEFAULT,
+)
+
+const savedScheduleSummary = computed(() => {
+	const recurrence = task.value.recurrence
+
+	if (recurrence) {
+		const basis = recurrence.basis === TASK_RECURRENCE_BASES.COMPLETION
+			? t('task.repeat.afterCompletion')
+			: t('task.repeat.onSchedule')
+
+		if (recurrence.byMonthDay > 0) {
+			return `${t('task.repeat.summaryMonthDay', {
+				interval: recurrence.interval,
+				day: recurrence.byMonthDay,
+			})} · ${basis}`
+		}
+
+		const ordinal = ordinalPositions.find(
+			position => position.value === recurrence.bySetPos,
+		)
+		const weekday = weekdays.find(
+			item => item.value === recurrence.byWeekdays,
+		)
+
+		if (ordinal && weekday) {
+			return `${t('task.repeat.summaryOrdinal', {
+				interval: recurrence.interval,
+				ordinal: t(ordinal.label),
+				weekday: t(weekday.label),
+			})} · ${basis}`
+		}
+
+		return t('task.repeat.advancedSchedule')
+	}
+
+	if (task.value.repeatMode === TASK_REPEAT_MODES.REPEAT_MODE_MONTH) {
+		return t('task.repeat.standardMonthlySummary')
+	}
+
+	if (task.value.repeatAfter.amount > 0) {
+		return t('task.repeat.standardIntervalSummary', {
+			amount: task.value.repeatAfter.amount,
+			unit: task.value.repeatAfter.type,
+		})
+	}
+
+	return ''
+})
 
 watch(
 	() => props.modelValue,
@@ -516,12 +612,12 @@ function updateOrdinalPosition() {
 	updateAdvancedData()
 }
 
-function updateAdvancedData() {
+function validateAdvancedSchedule(): boolean {
 	const recurrence = advancedRecurrence.value
 
 	if (recurrence.interval < 1) {
 		error({message: t('task.repeat.invalidInterval')})
-		return
+		return false
 	}
 
 	if (
@@ -529,11 +625,23 @@ function updateAdvancedData() {
 		(recurrence.byMonthDay < 1 || recurrence.byMonthDay > 31)
 	) {
 		error({message: t('task.repeat.invalidMonthDay')})
-		return
+		return false
 	}
 
 	recurrence.frequency = TASK_RECURRENCE_FREQUENCIES.MONTH
-	task.value.recurrence = {...recurrence}
+	return true
+}
+
+function updateAdvancedData() {
+	validateAdvancedSchedule()
+}
+
+function saveAdvancedSchedule() {
+	if (!validateAdvancedSchedule()) {
+		return
+	}
+
+	task.value.recurrence = {...advancedRecurrence.value}
 	task.value.repeatMode = TASK_REPEAT_MODES.REPEAT_MODE_DEFAULT
 
 	Object.assign(task.value.repeatAfter, {
@@ -542,7 +650,55 @@ function updateAdvancedData() {
 	})
 
 	emit('update:modelValue', task.value)
+
+	editorMode.value = null
+	advancedFrequency.value = null
 }
+
+function cancelAdvancedSchedule() {
+	advancedRecurrence.value = task.value.recurrence
+		? {...task.value.recurrence}
+		: createDefaultRecurrence()
+
+	advancedRuleType.value = advancedRecurrence.value.byMonthDay > 0
+		? 'monthDay'
+		: 'ordinal'
+
+	editorMode.value = null
+	advancedFrequency.value = null
+}
+
+function editSavedSchedule() {
+	if (task.value.recurrence) {
+		editorMode.value = 'advanced'
+		advancedFrequency.value = 'monthly'
+		advancedRecurrence.value = {...task.value.recurrence}
+		advancedRuleType.value = advancedRecurrence.value.byMonthDay > 0
+			? 'monthDay'
+			: 'ordinal'
+		return
+	}
+
+	editorMode.value = 'standard'
+}
+
+function clearSchedule() {
+	task.value.recurrence = null
+	task.value.repeatMode = TASK_REPEAT_MODES.REPEAT_MODE_DEFAULT
+
+	Object.assign(task.value.repeatAfter, {
+		amount: 0,
+		type: 'days',
+	})
+
+	advancedRecurrence.value = createDefaultRecurrence()
+	advancedRuleType.value = 'monthDay'
+	editorMode.value = null
+	advancedFrequency.value = null
+
+	emit('update:modelValue', task.value)
+}
+
 </script>
 
 <style lang="scss" scoped>
@@ -577,6 +733,29 @@ p {
 	display: flex;
 	justify-content: center;
 	gap: .75rem;
+}
+
+.saved-schedule {
+	margin-block-end: 1rem;
+}
+
+.saved-schedule-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	margin-block-end: .5rem;
+}
+
+.saved-schedule-actions,
+.schedule-actions {
+	display: flex;
+	gap: .5rem;
+}
+
+.schedule-actions {
+	justify-content: flex-end;
+	margin-block-start: 1rem;
 }
 
 .advanced-frequency-buttons {
