@@ -152,7 +152,7 @@ func validateTeamRelation(s *xorm.Session, parentTeamID, childTeamID int64) erro
 		return err
 	}
 
-	_, err = GetTeamByID(s, childTeamID)
+	childTeam, err := GetTeamByID(s, childTeamID)
 	if err != nil {
 		return err
 	}
@@ -176,8 +176,9 @@ func validateTeamRelation(s *xorm.Session, parentTeamID, childTeamID int64) erro
 	}
 	if slices.Contains(ancestors, childTeamID) {
 		return ErrTeamRelationWouldCreateCycle{
-			ParentTeamID: parentTeamID,
-			ChildTeamID:  childTeamID,
+			ParentTeamID:  parentTeamID,
+			ChildTeamID:   childTeamID,
+			ChildTeamName: childTeam.Name,
 		}
 	}
 
