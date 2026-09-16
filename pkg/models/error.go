@@ -1738,8 +1738,9 @@ func (err ErrTeamRelationAlreadyExists) HTTPError() web.HTTPError {
 
 // ErrTeamRelationWouldCreateCycle represents a cyclic team relation.
 type ErrTeamRelationWouldCreateCycle struct {
-	ParentTeamID int64
-	ChildTeamID  int64
+	ParentTeamID  int64
+	ChildTeamID   int64
+	ChildTeamName string
 }
 
 func IsErrTeamRelationWouldCreateCycle(err error) bool {
@@ -1762,7 +1763,7 @@ func (err ErrTeamRelationWouldCreateCycle) HTTPError() web.HTTPError {
 	return web.HTTPError{
 		HTTPCode: http.StatusConflict,
 		Code:     ErrCodeTeamRelationWouldCreateCycle,
-		Message:  "This team relation would create a cycle.",
+		Message:  fmt.Sprintf(`Adding "%s" to this team would create a problem.`, err.ChildTeamName),
 	}
 }
 
