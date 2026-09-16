@@ -109,7 +109,7 @@ func TestTeamRelationReadAll(t *testing.T) {
 	_, err = createTeamRelation(s, parentTeamID, childOneID)
 	require.NoError(t, err)
 
-	_, err = createTeamRelation(s, parentTeamID, childTwoID)
+	_, err = createTeamRelationWithAdmin(s, parentTeamID, childTwoID, true)
 	require.NoError(t, err)
 
 	u, err := user.GetUserByID(s, userID)
@@ -123,12 +123,18 @@ func TestTeamRelationReadAll(t *testing.T) {
 	assert.Equal(t, 2, count)
 	assert.Equal(t, int64(2), total)
 
-	teams, ok := result.([]*Team)
+	relations, ok := result.([]*TeamRelation)
 	require.True(t, ok)
-	require.Len(t, teams, 2)
+	require.Len(t, relations, 2)
 
-	assert.Equal(t, childOneID, teams[0].ID)
-	assert.Equal(t, childTwoID, teams[1].ID)
+	require.NotNil(t, relations[0].ChildTeam)
+	require.NotNil(t, relations[1].ChildTeam)
+
+	assert.Equal(t, childOneID, relations[0].ChildTeam.ID)
+	assert.False(t, relations[0].Admin)
+
+	assert.Equal(t, childTwoID, relations[1].ChildTeam.ID)
+	assert.True(t, relations[1].Admin)
 }
 
 func TestTeamDeleteRemovesRelations(t *testing.T) {
@@ -176,4 +182,46 @@ func TestTeamDeleteRemovesRelations(t *testing.T) {
 			assert.Equal(t, int64(0), count)
 		})
 	}
+}
+
+func TestTeamRelationUpdateTogglesAdmin(t *testing.T) {
+	db.LoadAndAssertFixtures(t)
+
+	s := db.NewSession()
+	defer s.Close()
+
+	const (
+		parentTeamID = int64(9931)
+		childTeamID  = int64(9932)
+	)
+
+	_, err := s.Insert(
+		&Team{ID: parentTeamID, Name: "Parent", CreatedByID: 1},
+		&Team{ID: childTeamID, Name: "Child", CreatedByID: 1},
+	)
+	require.NoError(t, err)
+
+	_, err = createTeamRelation(s, parentTeamID, childTeamID)
+	require.NoError(t, err)
+
+	relation := &TeamRelation{
+		ParentTeamID: parentTeamID,
+		ChildTeamID:  childTeamID,
+	}
+
+	err = relation.Update(s, nil)
+	require.NoError(t, err)
+	assert.True(t, relation.Admin)
+
+	stored := &TeamRelation{}
+	has, err := s.
+		Where("parent_team_id = ? AND child_team_id = ?", parentTeamID, childTeamID).
+		Get(stored)
+	require.NoError(t, err)
+	require.True(t, has)
+	assert.True(t, stored.Admin)
+
+	err = relation.Update(s, nil)
+	require.NoError(t, err)
+	assert.False(t, relation.Admin)
 }

@@ -51,6 +51,6 @@ func (tr *TeamRelation) CanRead(s *xorm.Session, a web.Auth) (bool, int, error) 
 	return true, int(PermissionAdmin), nil
 }
 
-func (tr *TeamRelation) CanUpdate(_ *xorm.Session, _ web.Auth) (bool, error) {
-	return false, nil
+func (tr *TeamRelation) CanUpdate(s *xorm.Session, a web.Auth) (bool, error) {
+	return (&Team{ID: tr.ParentTeamID}).IsAdmin(s, a)
 }

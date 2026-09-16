@@ -32,6 +32,8 @@ type TeamRelation struct {
 
 	ParentTeamID int64 `xorm:"bigint not null index unique(team_relation)" json:"-" param:"team"`
 	ChildTeamID  int64 `xorm:"bigint not null index unique(team_relation)" json:"child_team_id" param:"child_team"`
+	Admin        bool  `xorm:"not null default false" json:"admin" doc:"Whether members of the child team can administer the parent team."`
+	ChildTeam    *Team `xorm:"-" json:"child_team,omitempty" readOnly:"true"`
 
 	Created time.Time `xorm:"created not null" json:"created" readOnly:"true"`
 
@@ -103,6 +105,37 @@ func getEffectiveTeamIDsForUser(s *xorm.Session, userID int64) ([]int64, error) 
 	return getAncestorTeamIDs(s, teamIDs)
 }
 
+func isEffectiveTeamMember(s *xorm.Session, teamID, userID int64) (bool, error) {
+	teamIDs, err := getEffectiveTeamIDsForUser(s, userID)
+	if err != nil {
+		return false, err
+	}
+
+	return slices.Contains(teamIDs, teamID), nil
+}
+
+func isEffectiveTeamAdmin(s *xorm.Session, teamID, userID int64) (bool, error) {
+	directAdmin, err := s.
+		Where("team_id = ? AND user_id = ? AND admin = ?", teamID, userID, true).
+		Exist(&TeamMember{})
+	if err != nil || directAdmin {
+		return directAdmin, err
+	}
+
+	teamIDs, err := getEffectiveTeamIDsForUser(s, userID)
+	if err != nil {
+		return false, err
+	}
+	if len(teamIDs) == 0 {
+		return false, nil
+	}
+
+	return s.
+		Where("parent_team_id = ? AND admin = ?", teamID, true).
+		In("child_team_id", teamIDs).
+		Exist(&TeamRelation{})
+}
+
 func validateTeamRelation(s *xorm.Session, parentTeamID, childTeamID int64) error {
 	if parentTeamID <= 0 {
 		return ErrTeamDoesNotExist{TeamID: parentTeamID}
@@ -151,7 +184,7 @@ func validateTeamRelation(s *xorm.Session, parentTeamID, childTeamID int64) erro
 	return nil
 }
 
-func createTeamRelation(s *xorm.Session, parentTeamID, childTeamID int64) (*TeamRelation, error) {
+func createTeamRelationWithAdmin(s *xorm.Session, parentTeamID, childTeamID int64, admin bool) (*TeamRelation, error) {
 	if err := validateTeamRelation(s, parentTeamID, childTeamID); err != nil {
 		return nil, err
 	}
@@ -159,6 +192,7 @@ func createTeamRelation(s *xorm.Session, parentTeamID, childTeamID int64) (*Team
 	relation := &TeamRelation{
 		ParentTeamID: parentTeamID,
 		ChildTeamID:  childTeamID,
+		Admin:        admin,
 	}
 
 	_, err := s.Insert(relation)
@@ -169,9 +203,43 @@ func createTeamRelation(s *xorm.Session, parentTeamID, childTeamID int64) (*Team
 	return relation, nil
 }
 
+func createTeamRelation(s *xorm.Session, parentTeamID, childTeamID int64) (*TeamRelation, error) {
+	return createTeamRelationWithAdmin(s, parentTeamID, childTeamID, false)
+}
+
 // Create adds a child team to a team.
 func (tr *TeamRelation) Create(s *xorm.Session, _ web.Auth) error {
-	relation, err := createTeamRelation(s, tr.ParentTeamID, tr.ChildTeamID)
+	relation, err := createTeamRelationWithAdmin(s, tr.ParentTeamID, tr.ChildTeamID, tr.Admin)
+	if err != nil {
+		return err
+	}
+
+	*tr = *relation
+	return nil
+}
+
+// Update toggles whether members of the child team can administer the parent team.
+func (tr *TeamRelation) Update(s *xorm.Session, _ web.Auth) error {
+	relation := &TeamRelation{}
+	has, err := s.
+		Where("parent_team_id = ? AND child_team_id = ?", tr.ParentTeamID, tr.ChildTeamID).
+		Get(relation)
+	if err != nil {
+		return err
+	}
+	if !has {
+		return ErrTeamRelationDoesNotExist{
+			ParentTeamID: tr.ParentTeamID,
+			ChildTeamID:  tr.ChildTeamID,
+		}
+	}
+
+	relation.Admin = !relation.Admin
+
+	_, err = s.
+		Where("parent_team_id = ? AND child_team_id = ?", tr.ParentTeamID, tr.ChildTeamID).
+		Cols("admin").
+		Update(relation)
 	if err != nil {
 		return err
 	}
@@ -212,21 +280,22 @@ func (tr *TeamRelation) ReadAll(s *xorm.Session, a web.Auth, search string, page
 	}
 
 	totalItems, err = s.
-		Table("teams").
-		Join("INNER", "team_relations", "team_relations.child_team_id = teams.id").
+		Table("team_relations").
+		Join("INNER", "teams", "teams.id = team_relations.child_team_id").
 		Where("team_relations.parent_team_id = ?", tr.ParentTeamID).
 		Where(db.ILIKE("teams.name", search)).
-		Count(&Team{})
+		Count(&TeamRelation{})
 	if err != nil {
 		return nil, 0, 0, err
 	}
 
 	limit, start := getLimitFromPageIndex(page, perPage)
 
-	teams := []*Team{}
+	relations := []*TeamRelation{}
 	query := s.
-		Table("teams").
-		Join("INNER", "team_relations", "team_relations.child_team_id = teams.id").
+		Table("team_relations").
+		Select("team_relations.*").
+		Join("INNER", "teams", "teams.id = team_relations.child_team_id").
 		Where("team_relations.parent_team_id = ?", tr.ParentTeamID).
 		Where(db.ILIKE("teams.name", search)).
 		OrderBy("teams.name ASC")
@@ -235,10 +304,34 @@ func (tr *TeamRelation) ReadAll(s *xorm.Session, a web.Auth, search string, page
 		query = query.Limit(limit, start)
 	}
 
-	err = query.Find(&teams)
+	err = query.Find(&relations)
 	if err != nil {
 		return nil, 0, 0, err
 	}
 
-	return teams, len(teams), totalItems, nil
+	if len(relations) == 0 {
+		return relations, 0, totalItems, nil
+	}
+
+	childTeamIDs := make([]int64, 0, len(relations))
+	for _, relation := range relations {
+		childTeamIDs = append(childTeamIDs, relation.ChildTeamID)
+	}
+
+	teams := []*Team{}
+	err = s.In("id", childTeamIDs).Find(&teams)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	teamsByID := make(map[int64]*Team, len(teams))
+	for _, team := range teams {
+		teamsByID[team.ID] = team
+	}
+
+	for _, relation := range relations {
+		relation.ChildTeam = teamsByID[relation.ChildTeamID]
+	}
+
+	return relations, len(relations), totalItems, nil
 }

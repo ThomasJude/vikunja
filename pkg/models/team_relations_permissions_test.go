@@ -370,7 +370,7 @@ func TestDirectProjectPermissionSurvivesRelationRemoval(t *testing.T) {
 	assert.False(t, isAdmin)
 }
 
-func TestNestedTeamMembershipDoesNotGrantParentTeamAdministration(t *testing.T) {
+func TestNestedTeamMembershipGrantsParentMembership(t *testing.T) {
 	db.LoadAndAssertFixtures(t)
 
 	s := db.NewSession()
@@ -388,7 +388,6 @@ func TestNestedTeamMembershipDoesNotGrantParentTeamAdministration(t *testing.T) 
 	)
 	require.NoError(t, err)
 
-	// User is explicitly an administrator of the child team.
 	_, err = s.Insert(&TeamMember{
 		TeamID: childTeamID,
 		UserID: userID,
@@ -402,17 +401,100 @@ func TestNestedTeamMembershipDoesNotGrantParentTeamAdministration(t *testing.T) 
 	u, err := user.GetUserByID(s, userID)
 	require.NoError(t, err)
 
-	childAdmin, err := (&Team{ID: childTeamID}).IsAdmin(s, u)
+	parentReadable, maxPermission, err := (&Team{ID: parentTeamID}).CanRead(s, u)
 	require.NoError(t, err)
-	require.True(t, childAdmin)
+	assert.True(t, parentReadable)
+	assert.Equal(t, 0, maxPermission)
 
-	// Nesting must not grant administration of the parent team.
 	parentAdmin, err := (&Team{ID: parentTeamID}).IsAdmin(s, u)
 	require.NoError(t, err)
 	assert.False(t, parentAdmin)
+}
 
-	// Nor should nested membership make the user a direct member of the parent.
-	parentReadable, _, err := (&Team{ID: parentTeamID}).CanRead(s, u)
+func TestNestedTeamAdminRelationGrantsParentAdministration(t *testing.T) {
+	db.LoadAndAssertFixtures(t)
+
+	s := db.NewSession()
+	defer s.Close()
+
+	const (
+		parentTeamID = int64(9811)
+		childTeamID  = int64(9812)
+		userID       = int64(1)
+	)
+
+	_, err := s.Insert(
+		&Team{ID: parentTeamID, Name: "Parent Team", CreatedByID: 1},
+		&Team{ID: childTeamID, Name: "Child Team", CreatedByID: 1},
+	)
 	require.NoError(t, err)
-	assert.False(t, parentReadable)
+
+	_, err = s.Insert(&TeamMember{
+		TeamID: childTeamID,
+		UserID: userID,
+	})
+	require.NoError(t, err)
+
+	_, err = createTeamRelationWithAdmin(s, parentTeamID, childTeamID, true)
+	require.NoError(t, err)
+
+	u, err := user.GetUserByID(s, userID)
+	require.NoError(t, err)
+
+	parentReadable, maxPermission, err := (&Team{ID: parentTeamID}).CanRead(s, u)
+	require.NoError(t, err)
+	assert.True(t, parentReadable)
+	assert.Equal(t, int(PermissionAdmin), maxPermission)
+
+	parentAdmin, err := (&Team{ID: parentTeamID}).IsAdmin(s, u)
+	require.NoError(t, err)
+	assert.True(t, parentAdmin)
+
+	memberAdmin, err := (&TeamMember{TeamID: parentTeamID}).IsAdmin(s, u)
+	require.NoError(t, err)
+	assert.True(t, memberAdmin)
+}
+
+func TestNestedTeamAdminUsesEffectiveChildMembership(t *testing.T) {
+	db.LoadAndAssertFixtures(t)
+
+	s := db.NewSession()
+	defer s.Close()
+
+	const (
+		parentTeamID     = int64(9821)
+		childTeamID      = int64(9822)
+		grandchildTeamID = int64(9823)
+		userID           = int64(1)
+	)
+
+	_, err := s.Insert(
+		&Team{ID: parentTeamID, Name: "Parent", CreatedByID: 1},
+		&Team{ID: childTeamID, Name: "Child", CreatedByID: 1},
+		&Team{ID: grandchildTeamID, Name: "Grandchild", CreatedByID: 1},
+	)
+	require.NoError(t, err)
+
+	_, err = s.Insert(&TeamMember{
+		TeamID: grandchildTeamID,
+		UserID: userID,
+	})
+	require.NoError(t, err)
+
+	_, err = createTeamRelation(s, childTeamID, grandchildTeamID)
+	require.NoError(t, err)
+
+	_, err = createTeamRelationWithAdmin(s, parentTeamID, childTeamID, true)
+	require.NoError(t, err)
+
+	u, err := user.GetUserByID(s, userID)
+	require.NoError(t, err)
+
+	childReadable, _, err := (&Team{ID: childTeamID}).CanRead(s, u)
+	require.NoError(t, err)
+	assert.True(t, childReadable)
+
+	parentAdmin, err := (&Team{ID: parentTeamID}).IsAdmin(s, u)
+	require.NoError(t, err)
+	assert.True(t, parentAdmin)
 }
