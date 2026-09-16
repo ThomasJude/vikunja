@@ -508,15 +508,11 @@ const savedScheduleSummary = computed(() => {
 const savedScheduleBasis = computed(() => {
 	const recurrence = task.value.recurrence
 
-	if (!recurrence) {
+	if (!recurrence || recurrence.basis !== TASK_RECURRENCE_BASES.COMPLETION) {
 		return ''
 	}
 
-	const basis = recurrence.basis === TASK_RECURRENCE_BASES.COMPLETION
-		? t('task.repeat.afterCompletion')
-		: t('task.repeat.onSchedule')
-
-	return t('task.repeat.summaryBasedOn', {basis})
+	return t('task.repeat.repeatsFromCompletion')
 })
 
 watch(
@@ -778,9 +774,8 @@ p {
 
 .saved-schedule-content {
 	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 1.5rem;
+	flex-direction: column;
+	gap: 1.25rem;
 }
 
 .saved-schedule-copy {
@@ -827,15 +822,10 @@ p {
 	margin-block-start: 1rem;
 }
 
-@media screen and (max-width: 768px) {
-	.saved-schedule-content {
-		align-items: stretch;
-		flex-direction: column;
-	}
-
-	.saved-schedule-actions {
-		justify-content: flex-end;
-	}
+.saved-schedule-actions {
+	align-self: center;
+	justify-content: center;
+	margin-block-start: .5rem;
 }
 
 .advanced-frequency-buttons {
