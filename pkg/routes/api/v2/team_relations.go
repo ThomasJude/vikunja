@@ -28,7 +28,7 @@ import (
 )
 
 type teamChildListBody struct {
-	Body Paginated[*models.Team]
+	Body Paginated[*models.TeamRelation]
 }
 
 func RegisterTeamRelationRoutes(api huma.API) {
@@ -51,6 +51,16 @@ func RegisterTeamRelationRoutes(api huma.API) {
 		Path:        "/teams/{team}/children",
 		Tags:        tags,
 	}, teamChildrenAdd)
+
+	Register(api, huma.Operation{
+		OperationID:   "teams-children-toggle-admin",
+		Summary:       "Toggle a child team's admin status",
+		Description:   "Flips whether members of the child team can administer the parent team. Only an admin of the parent team may change this.",
+		Method:        http.MethodPost,
+		Path:          "/teams/{team}/children/{child}/admin",
+		DefaultStatus: http.StatusOK,
+		Tags:          tags,
+	}, teamChildrenToggleAdmin)
 
 	Register(api, huma.Operation{
 		OperationID: "teams-children-remove",
@@ -85,9 +95,9 @@ func teamChildrenList(ctx context.Context, in *struct {
 		return nil, translateDomainError(err)
 	}
 
-	items, ok := result.([]*models.Team)
+	items, ok := result.([]*models.TeamRelation)
 	if !ok {
-		return nil, fmt.Errorf("teamRelations.ReadAll returned unexpected type %T (expected []*models.Team)", result)
+		return nil, fmt.Errorf("teamRelations.ReadAll returned unexpected type %T (expected []*models.TeamRelation)", result)
 	}
 
 	return &teamChildListBody{
@@ -111,6 +121,27 @@ func teamChildrenAdd(ctx context.Context, in *struct {
 	}
 
 	return &singleBody[models.TeamRelation]{Body: &in.Body}, nil
+}
+
+func teamChildrenToggleAdmin(ctx context.Context, in *struct {
+	TeamID  int64 `path:"team"`
+	ChildID int64 `path:"child"`
+}) (*singleBody[models.TeamRelation], error) {
+	a, err := authFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	relation := &models.TeamRelation{
+		ParentTeamID: in.TeamID,
+		ChildTeamID:  in.ChildID,
+	}
+
+	if err := handler.DoUpdate(ctx, relation, a); err != nil {
+		return nil, translateDomainError(err)
+	}
+
+	return &singleBody[models.TeamRelation]{Body: relation}, nil
 }
 
 func teamChildrenRemove(ctx context.Context, in *struct {

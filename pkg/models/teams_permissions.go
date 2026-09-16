@@ -58,10 +58,7 @@ func (t *Team) IsAdmin(s *xorm.Session, a web.Auth) (bool, error) {
 		return true, nil
 	}
 
-	return s.Where("team_id = ?", t.ID).
-		And("user_id = ?", a.GetID()).
-		And("admin = ?", true).
-		Get(&TeamMember{})
+	return isEffectiveTeamAdmin(s, t.ID, a.GetID())
 }
 
 // CanRead returns true if the user has read access to the team
@@ -73,17 +70,20 @@ func (t *Team) CanRead(s *xorm.Session, a web.Auth) (bool, int, error) {
 	if isInstanceAdmin(s, a) {
 		return true, int(PermissionAdmin), nil
 	}
-	// Check if the user is in the team
-	tm := &TeamMember{}
-	can, err := s.
-		Where("team_id = ?", t.ID).
-		And("user_id = ?", a.GetID()).
-		Get(tm)
+	can, err := isEffectiveTeamMember(s, t.ID, a.GetID())
+	if err != nil || !can {
+		return can, 0, err
+	}
+
+	admin, err := isEffectiveTeamAdmin(s, t.ID, a.GetID())
+	if err != nil {
+		return false, 0, err
+	}
 
 	maxPermissions := 0
-	if tm.Admin {
+	if admin {
 		maxPermissions = int(PermissionAdmin)
 	}
 
-	return can, maxPermissions, err
+	return true, maxPermissions, nil
 }
