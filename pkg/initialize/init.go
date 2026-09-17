@@ -136,6 +136,7 @@ func FullInit() {
 	// Start the cron
 	cron.Init()
 	models.RegisterReminderCron()
+	models.RegisterTaskRecurrenceSeriesMaterializerCron()
 	models.RegisterOverdueReminderCron()
 	models.RegisterUserDeletionCron()
 	models.RegisterTaskCleanupCron()

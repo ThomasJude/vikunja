@@ -29,8 +29,20 @@ func validateTaskRecurrence(rule *TaskRecurrence) error {
 	}
 
 	switch rule.Frequency {
+	case TaskRecurrenceFrequencyDay:
+		if err := validateDailyRecurrence(rule); err != nil {
+			return ErrInvalidTaskRecurrence{Reason: err.Error()}
+		}
+	case TaskRecurrenceFrequencyWeek:
+		if err := validateWeeklyRecurrence(rule); err != nil {
+			return ErrInvalidTaskRecurrence{Reason: err.Error()}
+		}
 	case TaskRecurrenceFrequencyMonth:
 		if err := validateMonthlyRecurrence(rule); err != nil {
+			return ErrInvalidTaskRecurrence{Reason: err.Error()}
+		}
+	case TaskRecurrenceFrequencyYear:
+		if err := validateYearlyRecurrence(rule); err != nil {
 			return ErrInvalidTaskRecurrence{Reason: err.Error()}
 		}
 	default:
@@ -48,8 +60,14 @@ func nextTaskRecurrenceOccurrence(rule *TaskRecurrence, anchor time.Time) (time.
 	}
 
 	switch rule.Frequency {
+	case TaskRecurrenceFrequencyDay:
+		return nextDailyRecurrenceOccurrence(rule, anchor)
+	case TaskRecurrenceFrequencyWeek:
+		return nextWeeklyRecurrenceOccurrence(rule, anchor)
 	case TaskRecurrenceFrequencyMonth:
 		return nextMonthlyRecurrenceOccurrence(rule, anchor)
+	case TaskRecurrenceFrequencyYear:
+		return nextYearlyRecurrenceOccurrence(rule, anchor)
 	default:
 		return time.Time{}, fmt.Errorf("unsupported recurrence frequency: %d", rule.Frequency)
 	}
@@ -123,8 +141,14 @@ func nextTaskRecurrenceAfter(rule *TaskRecurrence, current, after time.Time) (ti
 	}
 
 	switch rule.Frequency {
+	case TaskRecurrenceFrequencyDay:
+		return nextDailyRecurrenceAfter(rule, current, after)
+	case TaskRecurrenceFrequencyWeek:
+		return nextWeeklyRecurrenceAfter(rule, current, after)
 	case TaskRecurrenceFrequencyMonth:
 		return nextMonthlyRecurrenceAfter(rule, current, after)
+	case TaskRecurrenceFrequencyYear:
+		return nextYearlyRecurrenceAfter(rule, current, after)
 	default:
 		return time.Time{}, fmt.Errorf("unsupported recurrence frequency: %d", rule.Frequency)
 	}

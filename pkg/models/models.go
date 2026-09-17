@@ -46,6 +46,8 @@ func GetTables() []interface{} {
 		&Project{},
 		&Task{},
 		&TaskRecurrence{},
+		&TaskRecurrenceSeries{},
+		&TaskRecurrenceOccurrence{},
 		&Team{},
 		&TeamMember{},
 		&TeamRelation{},
