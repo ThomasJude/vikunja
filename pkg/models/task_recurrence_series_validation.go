@@ -107,5 +107,10 @@ func validateTaskRecurrenceSeries(series *TaskRecurrenceSeries) error {
 		return fmt.Errorf("invalid missed-occurrence policy: %d", series.MissedPolicy)
 	}
 
+	if series.Basis == TaskRecurrenceBasisCompletion &&
+		series.MissedPolicy == TaskRecurrenceMissedEveryOccurrence {
+		return fmt.Errorf("generate every missed occurrence requires repeat on schedule")
+	}
+
 	return nil
 }
