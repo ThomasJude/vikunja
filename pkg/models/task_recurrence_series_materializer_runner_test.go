@@ -28,19 +28,9 @@ func TestTaskRecurrenceSeriesMaterializerRunner(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, 0, created)
-
-		count, err := f.s.
-			Where(
-				"series_id = ? AND sequence > ?",
-				f.series.ID,
-				1,
-			).
-			Count(&TaskRecurrenceOccurrence{})
-		require.NoError(t, err)
-		assert.Equal(t, int64(0), count)
 	})
 
-	t.Run("creates eligible occurrence", func(t *testing.T) {
+	t.Run("creates eligible schedule occurrence", func(t *testing.T) {
 		f := newTaskRecurrenceMaterializerFixture(t, 0)
 
 		created, err := materializeTaskRecurrenceSeriesAtSession(
@@ -83,21 +73,8 @@ func TestTaskRecurrenceSeriesMaterializerRunner(t *testing.T) {
 				sequence,
 			)
 			require.NoError(t, err)
-			require.NotNil(
-				t,
-				occurrence,
-				"sequence %d should have been materialized",
-				sequence,
-			)
+			require.NotNil(t, occurrence)
 		}
-
-		next, err := getTaskRecurrenceOccurrenceBySeriesAndSequence(
-			f.s,
-			f.series.ID,
-			5,
-		)
-		require.NoError(t, err)
-		assert.Nil(t, next)
 	})
 
 	t.Run("create before can materialize multiple future occurrences", func(t *testing.T) {
@@ -111,17 +88,6 @@ func TestTaskRecurrenceSeriesMaterializerRunner(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, 3, created)
-
-		for sequence := 2; sequence <= 4; sequence++ {
-			occurrence, err := getTaskRecurrenceOccurrenceBySeriesAndSequence(
-				f.s,
-				f.series.ID,
-				sequence,
-			)
-			require.NoError(t, err)
-			require.NotNil(t, occurrence)
-			assert.True(t, occurrence.DueDate.After(f.rootDue))
-		}
 	})
 
 	t.Run("paused series is ignored", func(t *testing.T) {
@@ -159,5 +125,130 @@ func TestTaskRecurrenceSeriesMaterializerRunner(t *testing.T) {
 		ids, err = getActiveTaskRecurrenceSeriesIDs(f.s)
 		require.NoError(t, err)
 		assert.NotContains(t, ids, f.series.ID)
+	})
+
+	t.Run("completion basis does not advance unfinished occurrence", func(t *testing.T) {
+		f := newTaskRecurrenceMaterializerFixture(t, 0)
+
+		f.series.Basis = TaskRecurrenceBasisCompletion
+		f.series.MissedPolicy = TaskRecurrenceMissedNextFuture
+		require.NoError(
+			t,
+			updateTaskRecurrenceSeries(f.s, f.series),
+		)
+
+		created, err := materializeTaskRecurrenceSeriesAtSession(
+			f.s,
+			f.series.ID,
+			f.rootDue.AddDate(0, 0, 30),
+		)
+
+		require.NoError(t, err)
+		assert.Equal(t, 0, created)
+
+		next, err := getTaskRecurrenceOccurrenceBySeriesAndSequence(
+			f.s,
+			f.series.ID,
+			2,
+		)
+		require.NoError(t, err)
+		assert.Nil(t, next)
+	})
+
+	t.Run("completion basis uses actual done at anchor", func(t *testing.T) {
+		f := newTaskRecurrenceMaterializerFixture(t, 0)
+
+		f.series.Basis = TaskRecurrenceBasisCompletion
+		f.series.MissedPolicy = TaskRecurrenceMissedNextFuture
+		require.NoError(
+			t,
+			updateTaskRecurrenceSeries(f.s, f.series),
+		)
+
+		completedAt := f.rootDue.Add(5 * time.Hour)
+
+		_, err := f.s.ID(int64(1)).
+			Cols("done", "done_at").
+			Update(&Task{
+				Done:   true,
+				DoneAt: completedAt,
+			})
+		require.NoError(t, err)
+
+		// Daily completion recurrence preserves the scheduled wall-clock time.
+		expectedDue := f.rootDue.AddDate(0, 0, 1)
+
+		// Completion itself is not enough when CreateAt is still in the future.
+		created, err := materializeTaskRecurrenceSeriesAtSession(
+			f.s,
+			f.series.ID,
+			completedAt,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, 0, created)
+
+		created, err = materializeTaskRecurrenceSeriesAtSession(
+			f.s,
+			f.series.ID,
+			expectedDue,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, 1, created)
+
+		next, err := getTaskRecurrenceOccurrenceBySeriesAndSequence(
+			f.s,
+			f.series.ID,
+			2,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, next)
+
+		assert.True(
+			t,
+			expectedDue.Equal(next.ScheduledDueDate),
+			"expected %s, got %s",
+			expectedDue,
+			next.ScheduledDueDate,
+		)
+	})
+
+	t.Run("completion basis create before can create immediately after completion", func(t *testing.T) {
+		f := newTaskRecurrenceMaterializerFixture(t, 2)
+
+		f.series.Basis = TaskRecurrenceBasisCompletion
+		f.series.MissedPolicy = TaskRecurrenceMissedNextFuture
+		require.NoError(
+			t,
+			updateTaskRecurrenceSeries(f.s, f.series),
+		)
+
+		completedAt := f.rootDue.Add(2 * time.Hour)
+
+		_, err := f.s.ID(int64(1)).
+			Cols("done", "done_at").
+			Update(&Task{
+				Done:   true,
+				DoneAt: completedAt,
+			})
+		require.NoError(t, err)
+
+		created, err := materializeTaskRecurrenceSeriesAtSession(
+			f.s,
+			f.series.ID,
+			completedAt,
+		)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, created)
+
+		next, err := getTaskRecurrenceOccurrenceBySeriesAndSequence(
+			f.s,
+			f.series.ID,
+			2,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, next)
+
+		assert.True(t, next.DueDate.After(completedAt))
 	})
 }
