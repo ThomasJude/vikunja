@@ -81,10 +81,10 @@ func (*TaskRecurrenceSeries) TableName() string {
 
 type TaskRecurrenceOccurrence struct {
 	ID       int64 `xorm:"bigint autoincr not null unique pk" json:"id" readOnly:"true"`
-	SeriesID int64 `xorm:"bigint not null INDEX" json:"series_id" readOnly:"true"`
+	SeriesID int64 `xorm:"bigint not null INDEX unique(series_sequence)" json:"series_id" readOnly:"true"`
 	TaskID   int64 `xorm:"bigint not null unique" json:"task_id" readOnly:"true"`
 
-	Sequence int `xorm:"int not null" json:"sequence" readOnly:"true"`
+	Sequence int `xorm:"int not null unique(series_sequence)" json:"sequence" readOnly:"true"`
 
 	ScheduledDueDate time.Time `xorm:"datetime not null" json:"scheduled_due_date" readOnly:"true"`
 	DueDate          time.Time `xorm:"datetime not null" json:"due_date" readOnly:"true"`
