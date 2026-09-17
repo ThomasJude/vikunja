@@ -20,6 +20,8 @@ import (
 
 const taskRecurrenceSeriesMaterializationBatchLimit = 100
 
+const taskRecurrenceSeriesSequenceConstraint = "UQE_task_recurrence_occurrences_series_sequence"
+
 func getLatestTaskRecurrenceOccurrenceBySeriesID(
 	s *xorm.Session,
 	seriesID int64,
@@ -44,59 +46,99 @@ func getLatestTaskRecurrenceOccurrenceBySeriesID(
 	return occurrence, nil
 }
 
-// materializeTaskRecurrenceSeriesAtSession performs all currently eligible
-// materialization work for one series using the caller's transaction.
+func isTaskRecurrenceSeriesSequenceConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Production MariaDB/PostgreSQL use the named migration constraint.
+	if db.IsUniqueConstraintError(
+		err,
+		taskRecurrenceSeriesSequenceConstraint,
+	) {
+		return true
+	}
+
+	// Vikunja's unit-test database reports SQLite unique failures as
+	// table.column pairs rather than the migration's index name.
+	return db.IsUniqueConstraintError(
+		err,
+		"task_recurrence_occurrences.series_id",
+	)
+}
+
+// materializeTaskRecurrenceSeriesOnceAtSession performs at most one
+// materialization attempt using the caller's active transaction.
+func materializeTaskRecurrenceSeriesOnceAtSession(
+	s *xorm.Session,
+	seriesID int64,
+	reference time.Time,
+) (created bool, err error) {
+	if s == nil {
+		return false, fmt.Errorf("database session is required")
+	}
+	if seriesID <= 0 {
+		return false, fmt.Errorf("recurrence series id is required")
+	}
+	if reference.IsZero() {
+		return false, fmt.Errorf("recurrence reference time is required")
+	}
+
+	series, err := getTaskRecurrenceSeriesByID(s, seriesID)
+	if err != nil {
+		return false, err
+	}
+
+	if series.Paused {
+		return false, nil
+	}
+
+	current, err := getLatestTaskRecurrenceOccurrenceBySeriesID(
+		s,
+		series.ID,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	if current == nil {
+		return false, fmt.Errorf(
+			"recurrence series %d has no current occurrence",
+			series.ID,
+		)
+	}
+
+	occurrence, err := materializeTaskRecurrenceSeriesOccurrence(
+		s,
+		series,
+		current,
+		reference,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return occurrence != nil, nil
+}
+
+// materializeTaskRecurrenceSeriesAtSession is the fixture/test-friendly
+// runner. The caller controls the surrounding transaction.
 func materializeTaskRecurrenceSeriesAtSession(
 	s *xorm.Session,
 	seriesID int64,
 	reference time.Time,
 ) (created int, err error) {
-	if s == nil {
-		return 0, fmt.Errorf("database session is required")
-	}
-	if seriesID <= 0 {
-		return 0, fmt.Errorf("recurrence series id is required")
-	}
-	if reference.IsZero() {
-		return 0, fmt.Errorf("recurrence reference time is required")
-	}
-
-	series, err := getTaskRecurrenceSeriesByID(s, seriesID)
-	if err != nil {
-		return 0, err
-	}
-
-	if series.Paused {
-		return 0, nil
-	}
-
 	for created < taskRecurrenceSeriesMaterializationBatchLimit {
-		current, err := getLatestTaskRecurrenceOccurrenceBySeriesID(
+		didCreate, err := materializeTaskRecurrenceSeriesOnceAtSession(
 			s,
-			series.ID,
-		)
-		if err != nil {
-			return created, err
-		}
-
-		if current == nil {
-			return created, fmt.Errorf(
-				"recurrence series %d has no current occurrence",
-				series.ID,
-			)
-		}
-
-		occurrence, err := materializeTaskRecurrenceSeriesOccurrence(
-			s,
-			series,
-			current,
+			seriesID,
 			reference,
 		)
 		if err != nil {
 			return created, err
 		}
 
-		if occurrence == nil {
+		if !didCreate {
 			return created, nil
 		}
 
@@ -106,10 +148,11 @@ func materializeTaskRecurrenceSeriesAtSession(
 	return created, nil
 }
 
-// materializeTaskRecurrenceSeriesAt is the production transaction wrapper.
+// materializeTaskRecurrenceSeriesAt is the production runner.
 //
-// db.NewSession already creates an active transaction. Do not call Begin()
-// again here.
+// Every generated occurrence gets its own transaction. This keeps locks short,
+// makes rollback atomic for task + occurrence creation, and prevents a large
+// missed-occurrence catch-up from holding one long-running transaction.
 func materializeTaskRecurrenceSeriesAt(
 	seriesID int64,
 	reference time.Time,
@@ -121,22 +164,49 @@ func materializeTaskRecurrenceSeriesAt(
 		return 0, fmt.Errorf("recurrence reference time is required")
 	}
 
-	s := db.NewSession()
-	defer s.Close()
+	for created < taskRecurrenceSeriesMaterializationBatchLimit {
+		s := db.NewSession()
 
-	created, err = materializeTaskRecurrenceSeriesAtSession(
-		s,
-		seriesID,
-		reference,
-	)
-	if err != nil {
-		_ = s.Rollback()
-		return created, err
-	}
+		didCreate, materializeErr := materializeTaskRecurrenceSeriesOnceAtSession(
+			s,
+			seriesID,
+			reference,
+		)
 
-	if err := s.Commit(); err != nil {
-		_ = s.Rollback()
-		return 0, err
+		if materializeErr != nil {
+			_ = s.Rollback()
+			_ = s.Close()
+
+			// Another worker may have materialized the same sequence between
+			// our idempotency lookup and insert. Its transaction wins; ours
+			// rolls back the newly created task and exits quietly.
+			if isTaskRecurrenceSeriesSequenceConflict(materializeErr) {
+				return created, nil
+			}
+
+			return created, materializeErr
+		}
+
+		if commitErr := s.Commit(); commitErr != nil {
+			_ = s.Rollback()
+			_ = s.Close()
+
+			if isTaskRecurrenceSeriesSequenceConflict(commitErr) {
+				return created, nil
+			}
+
+			return created, commitErr
+		}
+
+		if closeErr := s.Close(); closeErr != nil {
+			return created, closeErr
+		}
+
+		if !didCreate {
+			return created, nil
+		}
+
+		created++
 	}
 
 	return created, nil
@@ -150,6 +220,7 @@ func getActiveTaskRecurrenceSeriesIDs(
 	err := s.
 		Cols("id").
 		Where("paused = ?", false).
+		OrderBy("id").
 		Find(&series)
 	if err != nil {
 		return nil, err
@@ -164,7 +235,7 @@ func getActiveTaskRecurrenceSeriesIDs(
 }
 
 // materializeDueTaskRecurrenceSeriesAt scans active series and materializes
-// each series in its own transaction.
+// each series independently. An error in one series does not block others.
 func materializeDueTaskRecurrenceSeriesAt(
 	reference time.Time,
 ) (created int, err error) {
@@ -172,7 +243,6 @@ func materializeDueTaskRecurrenceSeriesAt(
 		return 0, fmt.Errorf("recurrence reference time is required")
 	}
 
-	// Use one short transaction only for discovering active series.
 	scan := db.NewSession()
 
 	seriesIDs, scanErr := getActiveTaskRecurrenceSeriesIDs(scan)

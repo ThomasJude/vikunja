@@ -68,6 +68,78 @@ func copyTaskRecurrenceSeriesLabels(
 	return err
 }
 
+// planTaskRecurrenceSeriesOccurrenceForMaterialization resolves the next
+// occurrence using the correct recurrence anchor and checks whether it is
+// eligible to be created at reference.
+//
+// Schedule-based recurrence uses reference as the planner's catch-up point.
+// Completion-based recurrence must use the actual DoneAt timestamp of the
+// current occurrence task as its recurrence anchor. This prevents cron time
+// from being mistaken for task completion time.
+func planTaskRecurrenceSeriesOccurrenceForMaterialization(
+	s *xorm.Session,
+	series *TaskRecurrenceSeries,
+	current *TaskRecurrenceOccurrence,
+	reference time.Time,
+) (*TaskRecurrenceSeriesOccurrencePlan, error) {
+	if series == nil {
+		return nil, fmt.Errorf("recurrence series is required")
+	}
+	if current == nil {
+		return nil, fmt.Errorf("current recurrence occurrence is required")
+	}
+	if reference.IsZero() {
+		return nil, fmt.Errorf("recurrence reference time is required")
+	}
+
+	var plannerReference time.Time
+
+	switch series.Basis {
+	case TaskRecurrenceBasisSchedule:
+		plannerReference = reference
+
+	case TaskRecurrenceBasisCompletion:
+		currentTask, err := GetTaskByIDSimple(s, current.TaskID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Repeat After Completion must never advance merely because time has
+		// passed. The current occurrence has to be actually completed first.
+		if !currentTask.Done || currentTask.DoneAt.IsZero() {
+			return nil, nil
+		}
+
+		plannerReference = currentTask.DoneAt
+
+	default:
+		return nil, fmt.Errorf(
+			"invalid recurrence basis: %d",
+			series.Basis,
+		)
+	}
+
+	plan, err := planNextTaskRecurrenceSeriesOccurrence(
+		series,
+		current,
+		plannerReference,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil {
+		return nil, nil
+	}
+
+	// The recurrence may already be known after completion but still have a
+	// future CreateAt time. Cron will revisit the series when that time arrives.
+	if plan.CreateAt.After(reference) {
+		return nil, nil
+	}
+
+	return plan, nil
+}
+
 // materializeTaskRecurrenceSeriesOccurrence creates the next occurrence once
 // its CreateAt time has been reached.
 //
@@ -99,7 +171,8 @@ func materializeTaskRecurrenceSeriesOccurrence(
 		return nil, fmt.Errorf("recurrence reference time is required")
 	}
 
-	plan, err := planNextTaskRecurrenceSeriesOccurrence(
+	plan, err := planTaskRecurrenceSeriesOccurrenceForMaterialization(
+		s,
 		series,
 		current,
 		reference,
@@ -108,13 +181,9 @@ func materializeTaskRecurrenceSeriesOccurrence(
 		return nil, err
 	}
 
-	// Paused or ended series have no next occurrence.
+	// Paused, ended, not-yet-completed, or not-yet-creatable series have no
+	// occurrence to materialize at this time.
 	if plan == nil {
-		return nil, nil
-	}
-
-	// Do not create the task before its configured creation time.
-	if plan.CreateAt.After(reference) {
 		return nil, nil
 	}
 
