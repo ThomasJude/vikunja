@@ -18,6 +18,7 @@ package models
 
 import (
 	"fmt"
+	"time"
 
 	"xorm.io/xorm"
 )
@@ -181,4 +182,56 @@ func getTaskRecurrenceOccurrenceByTaskID(
 	}
 
 	return occurrence, nil
+}
+
+func updateTaskRecurrenceSeriesRootTaskID(
+	s *xorm.Session,
+	series *TaskRecurrenceSeries,
+	taskID int64,
+) error {
+	if series == nil || series.ID <= 0 {
+		return fmt.Errorf("recurrence series id is required")
+	}
+	if taskID <= 0 {
+		return fmt.Errorf("root task id is required")
+	}
+
+	_, err := s.
+		ID(series.ID).
+		Cols("root_task_id").
+		Update(&TaskRecurrenceSeries{
+			RootTaskID: taskID,
+		})
+	if err != nil {
+		return err
+	}
+
+	series.RootTaskID = taskID
+	return nil
+}
+
+func updateTaskRecurrenceOccurrenceException(
+	s *xorm.Session,
+	occurrence *TaskRecurrenceOccurrence,
+	exception bool,
+	anchor time.Time,
+) error {
+	if occurrence == nil || occurrence.ID <= 0 {
+		return fmt.Errorf("recurrence occurrence id is required")
+	}
+
+	_, err := s.
+		ID(occurrence.ID).
+		Cols("is_exception", "exception_anchor").
+		Update(&TaskRecurrenceOccurrence{
+			IsException:     exception,
+			ExceptionAnchor: anchor,
+		})
+	if err != nil {
+		return err
+	}
+
+	occurrence.IsException = exception
+	occurrence.ExceptionAnchor = anchor
+	return nil
 }
