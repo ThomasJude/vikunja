@@ -33,7 +33,8 @@ func recurrenceWeekdayMask(days ...time.Weekday) int {
 }
 
 func TestNextWeeklyRecurrenceOccurrence(t *testing.T) {
-	location := time.FixedZone("PKT", 5*60*60)
+	location, err := time.LoadLocation("America/Chicago")
+	require.NoError(t, err)
 
 	t.Run("every monday", func(t *testing.T) {
 		rule := &TaskRecurrence{
@@ -202,7 +203,8 @@ func TestNextWeeklyRecurrenceOccurrence(t *testing.T) {
 }
 
 func TestNextWeeklyRecurrenceAfter(t *testing.T) {
-	location := time.FixedZone("PKT", 5*60*60)
+	location, err := time.LoadLocation("America/Chicago")
+	require.NoError(t, err)
 
 	rule := &TaskRecurrence{
 		Frequency: TaskRecurrenceFrequencyWeek,

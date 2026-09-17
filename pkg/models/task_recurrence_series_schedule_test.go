@@ -25,7 +25,8 @@ import (
 )
 
 func TestTaskRecurrenceSeriesSchedule(t *testing.T) {
-	location := time.FixedZone("PKT", 5*60*60)
+	location, err := time.LoadLocation("America/Chicago")
+	require.NoError(t, err)
 
 	t.Run("series converts to recurrence rule", func(t *testing.T) {
 		series := validTaskRecurrenceSeries()
