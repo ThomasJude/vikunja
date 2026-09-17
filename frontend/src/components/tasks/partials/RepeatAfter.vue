@@ -387,10 +387,18 @@
 				</div>
 			</template>
 		</div>
+		<RecurrenceSeriesMonthly
+			:task-id="task.id"
+			:due-date="task.dueDate"
+			:recurrence="task.recurrence"
+			:disabled="disabled"
+			@update:recurrence="task.recurrence = $event"
+		/>
 	</div>
 </template>
 
 <script setup lang="ts">
+import RecurrenceSeriesMonthly from '@/components/tasks/partials/RecurrenceSeriesMonthly.vue'
 import {computed, reactive, ref, watch} from 'vue'
 import {useI18n} from 'vue-i18n'
 
