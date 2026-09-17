@@ -25,7 +25,8 @@ import (
 )
 
 func TestNextDailyRecurrenceOccurrence(t *testing.T) {
-	location := time.FixedZone("PKT", 5*60*60)
+	location, err := time.LoadLocation("America/Chicago")
+	require.NoError(t, err)
 
 	tests := []struct {
 		name     string
@@ -153,7 +154,8 @@ func TestNextDailyRecurrenceOccurrence(t *testing.T) {
 }
 
 func TestNextDailyRecurrenceAfter(t *testing.T) {
-	location := time.FixedZone("PKT", 5*60*60)
+	location, err := time.LoadLocation("America/Chicago")
+	require.NoError(t, err)
 
 	t.Run("schedule skips historical occurrences", func(t *testing.T) {
 		rule := &TaskRecurrence{
@@ -253,5 +255,114 @@ func TestValidateDailyRecurrence(t *testing.T) {
 		}
 
 		require.Error(t, validateTaskRecurrence(rule))
+	})
+}
+
+func TestDailyRecurrenceAcrossChicagoDST(t *testing.T) {
+	location, err := time.LoadLocation("America/Chicago")
+	require.NoError(t, err)
+
+	t.Run("spring forward preserves local time", func(t *testing.T) {
+		rule := &TaskRecurrence{
+			Frequency: TaskRecurrenceFrequencyDay,
+			Interval:  1,
+			Basis:     TaskRecurrenceBasisSchedule,
+		}
+
+		current := time.Date(
+			2026,
+			time.March,
+			7,
+			9,
+			0,
+			0,
+			0,
+			location,
+		)
+
+		next, err := nextTaskRecurrenceOccurrence(rule, current)
+		require.NoError(t, err)
+
+		expected := time.Date(
+			2026,
+			time.March,
+			8,
+			9,
+			0,
+			0,
+			0,
+			location,
+		)
+
+		assert.True(
+			t,
+			next.Equal(expected),
+			"expected %s, got %s",
+			expected,
+			next,
+		)
+
+		_, currentOffset := current.Zone()
+		_, nextOffset := next.Zone()
+
+		assert.NotEqual(
+			t,
+			currentOffset,
+			nextOffset,
+			"DST transition should change the UTC offset",
+		)
+		assert.Equal(t, 9, next.Hour())
+	})
+
+	t.Run("fall back preserves local time", func(t *testing.T) {
+		rule := &TaskRecurrence{
+			Frequency: TaskRecurrenceFrequencyDay,
+			Interval:  1,
+			Basis:     TaskRecurrenceBasisSchedule,
+		}
+
+		current := time.Date(
+			2026,
+			time.October,
+			31,
+			9,
+			0,
+			0,
+			0,
+			location,
+		)
+
+		next, err := nextTaskRecurrenceOccurrence(rule, current)
+		require.NoError(t, err)
+
+		expected := time.Date(
+			2026,
+			time.November,
+			1,
+			9,
+			0,
+			0,
+			0,
+			location,
+		)
+
+		assert.True(
+			t,
+			next.Equal(expected),
+			"expected %s, got %s",
+			expected,
+			next,
+		)
+
+		_, currentOffset := current.Zone()
+		_, nextOffset := next.Zone()
+
+		assert.NotEqual(
+			t,
+			currentOffset,
+			nextOffset,
+			"DST transition should change the UTC offset",
+		)
+		assert.Equal(t, 9, next.Hour())
 	})
 }
