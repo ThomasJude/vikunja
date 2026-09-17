@@ -92,6 +92,14 @@ func planTaskRecurrenceSeriesOccurrenceForMaterialization(
 		return nil, fmt.Errorf("recurrence reference time is required")
 	}
 
+	// A series explicitly truncated at the current occurrence cannot produce
+	// another occurrence. Check this before loading a completion-basis task,
+	// because that task may have intentionally been soft-deleted.
+	if series.EndType == TaskRecurrenceEndOccurrences &&
+		current.Sequence >= series.EndAfterOccurrences {
+		return nil, nil
+	}
+
 	var plannerReference time.Time
 
 	switch series.Basis {
@@ -99,6 +107,14 @@ func planTaskRecurrenceSeriesOccurrenceForMaterialization(
 		plannerReference = reference
 
 	case TaskRecurrenceBasisCompletion:
+		// A deliberately deleted occurrence behaves like a skipped completion.
+		// Its persisted exception anchor keeps recurrence stable even after the
+		// soft-deleted task is permanently cleaned up.
+		if current.IsException && !current.ExceptionAnchor.IsZero() {
+			plannerReference = current.ExceptionAnchor
+			break
+		}
+
 		currentTask, err := GetTaskByIDSimple(s, current.TaskID)
 		if err != nil {
 			return nil, err

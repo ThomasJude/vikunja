@@ -89,7 +89,8 @@ type TaskRecurrenceOccurrence struct {
 	ScheduledDueDate time.Time `xorm:"datetime not null" json:"scheduled_due_date" readOnly:"true"`
 	DueDate          time.Time `xorm:"datetime not null" json:"due_date" readOnly:"true"`
 
-	IsException bool `xorm:"not null default false" json:"is_exception" readOnly:"true"`
+	IsException     bool      `xorm:"not null default false" json:"is_exception" readOnly:"true"`
+	ExceptionAnchor time.Time `xorm:"datetime null" json:"exception_anchor" readOnly:"true"`
 
 	Created time.Time `xorm:"created not null" json:"created" readOnly:"true"`
 	Updated time.Time `xorm:"updated not null" json:"updated" readOnly:"true"`
