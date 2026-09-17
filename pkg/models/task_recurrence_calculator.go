@@ -41,6 +41,10 @@ func validateTaskRecurrence(rule *TaskRecurrence) error {
 		if err := validateMonthlyRecurrence(rule); err != nil {
 			return ErrInvalidTaskRecurrence{Reason: err.Error()}
 		}
+	case TaskRecurrenceFrequencyYear:
+		if err := validateYearlyRecurrence(rule); err != nil {
+			return ErrInvalidTaskRecurrence{Reason: err.Error()}
+		}
 	default:
 		return ErrInvalidTaskRecurrence{
 			Reason: fmt.Sprintf("unsupported recurrence frequency: %d", rule.Frequency),
@@ -62,6 +66,8 @@ func nextTaskRecurrenceOccurrence(rule *TaskRecurrence, anchor time.Time) (time.
 		return nextWeeklyRecurrenceOccurrence(rule, anchor)
 	case TaskRecurrenceFrequencyMonth:
 		return nextMonthlyRecurrenceOccurrence(rule, anchor)
+	case TaskRecurrenceFrequencyYear:
+		return nextYearlyRecurrenceOccurrence(rule, anchor)
 	default:
 		return time.Time{}, fmt.Errorf("unsupported recurrence frequency: %d", rule.Frequency)
 	}
@@ -141,6 +147,8 @@ func nextTaskRecurrenceAfter(rule *TaskRecurrence, current, after time.Time) (ti
 		return nextWeeklyRecurrenceAfter(rule, current, after)
 	case TaskRecurrenceFrequencyMonth:
 		return nextMonthlyRecurrenceAfter(rule, current, after)
+	case TaskRecurrenceFrequencyYear:
+		return nextYearlyRecurrenceAfter(rule, current, after)
 	default:
 		return time.Time{}, fmt.Errorf("unsupported recurrence frequency: %d", rule.Frequency)
 	}
