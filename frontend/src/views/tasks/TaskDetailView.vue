@@ -603,7 +603,7 @@
 							icon="trash-alt"
 							:shadow="false"
 							class="is-danger is-outlined has-no-border"
-							@click="showDeleteModal = true"
+							@click="prepareDeleteTask"
 						>
 							{{ $t('task.detail.actions.delete') }}
 						</XButton>
@@ -648,6 +648,14 @@
 				</p>
 			</template>
 		</Modal>
+
+		<RecurrenceScopeDialog
+			:enabled="showRecurrenceScopeModal"
+			:action="recurrenceScopeAction"
+			:occurrence-only="recurrenceScopeOccurrenceOnly"
+			@close="cancelRecurrenceScope"
+			@submit="submitRecurrenceScope"
+		/>
 	</div>
 </template>
 
@@ -659,11 +667,16 @@ import {unrefElement, useDebounceFn, useElementSize, useIntersectionObserver, us
 import {klona} from 'klona/lite'
 
 import TaskService from '@/services/task'
+import TaskRecurrenceSeriesService from '@/services/taskRecurrenceSeries'
 import TaskModel from '@/models/task'
 
 import type {ITask} from '@/modelTypes/ITask'
 import type {IAttachment} from '@/modelTypes/IAttachment'
 import type {IProject} from '@/modelTypes/IProject'
+import {
+	TASK_RECURRENCE_SCOPES,
+	type TaskRecurrenceScope,
+} from '@/modelTypes/ITaskRecurrenceSeries'
 
 import {PRIORITIES, type Priority} from '@/constants/priorities'
 import {PERMISSIONS} from '@/constants/permissions'
@@ -690,6 +703,7 @@ import PrioritySelect from '@/components/tasks/partials/PrioritySelect.vue'
 import RelatedTasks from '@/components/tasks/partials/RelatedTasks.vue'
 import Reminders from '@/components/tasks/partials/Reminders.vue'
 import RepeatAfter from '@/components/tasks/partials/RepeatAfter.vue'
+import RecurrenceScopeDialog from '@/components/tasks/partials/RecurrenceScopeDialog.vue'
 import TaskSubscription from '@/components/misc/Subscription.vue'
 import CustomTransition from '@/components/misc/CustomTransition.vue'
 import AssigneeList from '@/components/tasks/partials/AssigneeList.vue'
@@ -738,6 +752,17 @@ const authStore = useAuthStore()
 const baseStore = useBaseStore()
 
 const task = ref<ITask>(new TaskModel())
+const persistedTaskSnapshot = ref<ITask | null>(null)
+
+watch(
+	() => task.value.id,
+	id => {
+		if (id > 0) {
+			persistedTaskSnapshot.value = klona(task.value)
+		}
+	},
+	{flush: 'post'},
+)
 const hasAttachments = computed(() => (task.value.attachments?.length ?? 0) > 0)
 const remindersDefaultRelativeTo = computed(() => {
 	if (task.value.dueDate) {
@@ -1084,6 +1109,187 @@ function openAttachments() {
 	})
 }
 
+type RecurrenceScopedField =
+        | 'title'
+        | 'description'
+        | 'done'
+        | 'due_date'
+        | 'priority'
+        | 'start_date'
+        | 'end_date'
+        | 'hex_color'
+        | 'percent_done'
+
+const recurrenceSeriesService = new TaskRecurrenceSeriesService()
+
+const recurrencePropagatedFields = new Set<RecurrenceScopedField>([
+	'title',
+	'description',
+	'priority',
+	'hex_color',
+	'percent_done',
+])
+
+const recurrenceFieldMap: Array<{
+        field: RecurrenceScopedField
+        property: keyof ITask
+}> = [
+	{field: 'title', property: 'title'},
+	{field: 'description', property: 'description'},
+	{field: 'done', property: 'done'},
+	{field: 'due_date', property: 'dueDate'},
+	{field: 'priority', property: 'priority'},
+	{field: 'start_date', property: 'startDate'},
+	{field: 'end_date', property: 'endDate'},
+	{field: 'hex_color', property: 'hexColor'},
+	{field: 'percent_done', property: 'percentDone'},
+]
+
+const showRecurrenceScopeModal = ref(false)
+const recurrenceScopeAction = ref<'edit' | 'delete'>('edit')
+const recurrenceScopeOccurrenceOnly = ref(false)
+
+type PendingRecurrenceUpdate = {
+	task: ITask
+	fields: RecurrenceScopedField[]
+	undoCallback?: () => void
+}
+
+const pendingRecurrenceUpdate = ref<PendingRecurrenceUpdate | null>(null)
+
+function recurrenceComparableValue(value: unknown) {
+	if (value instanceof Date) {
+		return value.getTime()
+	}
+
+	return value ?? null
+}
+
+function recurrenceChangedFields(
+	currentTask: ITask,
+): RecurrenceScopedField[] {
+	const original = persistedTaskSnapshot.value
+
+	if (
+		original === null ||
+                original.id !== currentTask.id
+	) {
+		return []
+	}
+
+	return recurrenceFieldMap
+		.filter(({property}) =>
+			recurrenceComparableValue(original[property]) !==
+                        recurrenceComparableValue(currentTask[property]),
+		)
+		.map(({field}) => field)
+}
+
+function recurrencePatch(
+	currentTask: ITask,
+	fields: RecurrenceScopedField[],
+): Partial<ITask> {
+	const patch: Partial<ITask> = {}
+
+	for (const field of fields) {
+		switch (field) {
+			case 'title':
+				patch.title = currentTask.title
+				break
+			case 'description':
+				patch.description = currentTask.description
+				break
+			case 'done':
+				patch.done = currentTask.done
+				break
+			case 'due_date':
+				patch.dueDate = currentTask.dueDate
+				break
+			case 'priority':
+				patch.priority = currentTask.priority
+				break
+			case 'start_date':
+				patch.startDate = currentTask.startDate
+				break
+			case 'end_date':
+				patch.endDate = currentTask.endDate
+				break
+			case 'hex_color':
+				patch.hexColor = currentTask.hexColor
+				break
+			case 'percent_done':
+				patch.percentDone = currentTask.percentDone
+				break
+		}
+	}
+
+	return patch
+}
+
+function recurrenceFieldsRequireOccurrenceOnly(
+	fields: RecurrenceScopedField[],
+) {
+	return fields.some(
+		field => !recurrencePropagatedFields.has(field),
+	)
+}
+
+function updatePersistedTaskSnapshot(updatedTask: ITask) {
+	persistedTaskSnapshot.value = klona(updatedTask)
+}
+
+function showTaskUpdateSuccess(
+	undoCallback?: () => void,
+) {
+	let actions: MessageAction[] = []
+
+	if (undoCallback) {
+		actions = [{
+			title: t('task.undo'),
+			callback: undoCallback,
+		}]
+	}
+
+	success(
+		{message: t('task.detail.updateSuccess')},
+		actions,
+	)
+}
+
+async function saveNormalTask(
+	currentTask: ITask,
+	undoCallback?: () => void,
+) {
+	const updatedTask = await taskStore.update(currentTask)
+
+	Object.assign(task.value, updatedTask)
+
+	updatePersistedTaskSnapshot(task.value)
+	setActiveFields()
+
+	showTaskUpdateSuccess(undoCallback)
+}
+
+async function saveRecurringOccurrence(
+	currentTask: ITask,
+	fields: RecurrenceScopedField[],
+	undoCallback?: () => void,
+) {
+	await recurrenceSeriesService.scopedUpdate(
+		currentTask.id,
+		TASK_RECURRENCE_SCOPES.OCCURRENCE,
+		fields,
+		recurrencePatch(currentTask, fields),
+	)
+
+	Object.assign(task.value, currentTask)
+
+	updatePersistedTaskSnapshot(task.value)
+	setActiveFields()
+
+	showTaskUpdateSuccess(undoCallback)
+}
+
 async function saveTask(
 	currentTask: ITask | null = null,
 	undoCallback?: () => void,
@@ -1099,27 +1305,69 @@ async function saveTask(
 	currentTask.hexColor = taskColor.value
 
 	// If no end date is being set, but a start date and due date,
-	// use the due date as the end date
+	// use the due date as the end date.
 	if (
 		currentTask.endDate === null &&
-		currentTask.startDate !== null &&
-		currentTask.dueDate !== null
+                currentTask.startDate !== null &&
+                currentTask.dueDate !== null
 	) {
 		currentTask.endDate = currentTask.dueDate
 	}
 
-	const updatedTask = await taskStore.update(currentTask) // TODO: markraw ?
-	Object.assign(task.value, updatedTask)
-	setActiveFields()
+	const fields = recurrenceChangedFields(currentTask)
 
-	let actions: MessageAction[] = []
-	if (undoCallback) {
-		actions = [{
-			title: t('task.undo'),
-			callback: undoCallback,
-		}]
+	// Fields outside the recurrence scope contract continue through
+	// Vikunja's normal task update path.
+	if (fields.length === 0) {
+		await saveNormalTask(
+			currentTask,
+			undoCallback,
+		)
+		return
 	}
-	success({message: t('task.detail.updateSuccess')}, actions)
+
+	const recurrenceState =
+                await recurrenceSeriesService.get(currentTask.id)
+
+	if (
+		!recurrenceState.series ||
+                !recurrenceState.occurrence
+	) {
+		await saveNormalTask(
+			currentTask,
+			undoCallback,
+		)
+		return
+	}
+
+	// Completion always applies only to the current occurrence.
+	// Future occurrences must never inherit Done=true.
+	if (
+		fields.length === 1 &&
+                fields[0] === 'done'
+	) {
+		await saveRecurringOccurrence(
+			currentTask,
+			fields,
+			undoCallback,
+		)
+		return
+	}
+
+	pendingRecurrenceUpdate.value = {
+		task: currentTask,
+		fields,
+		undoCallback,
+	}
+
+	recurrenceScopeAction.value = 'edit'
+
+	// Absolute task dates cannot be propagated to future
+	// occurrences because each occurrence has its own schedule.
+	recurrenceScopeOccurrenceOnly.value =
+                recurrenceFieldsRequireOccurrenceOnly(fields)
+
+	showRecurrenceScopeModal.value = true
 }
 
 useTaskDetailShortcuts({
@@ -1130,10 +1378,124 @@ useTaskDetailShortcuts({
 
 const showDeleteModal = ref(false)
 
+async function prepareDeleteTask() {
+	// Delete is infrequent, so use the backend as the authoritative
+	// source for recurrence-series membership.
+	const recurrenceState =
+                await recurrenceSeriesService.get(task.value.id)
+
+	if (
+		recurrenceState.series &&
+                recurrenceState.occurrence
+	) {
+		recurrenceScopeAction.value = 'delete'
+		recurrenceScopeOccurrenceOnly.value = false
+		showRecurrenceScopeModal.value = true
+		return
+	}
+
+	showDeleteModal.value = true
+}
+
 async function deleteTask() {
+	showDeleteModal.value = false
+
 	await taskStore.delete(task.value)
-	success({message: t('task.detail.deleteSuccess')})
-	router.push({name: 'project.index', params: {projectId: task.value.projectId}})
+
+	success({
+		message: t('task.detail.deleteSuccess'),
+	})
+
+	await router.push({
+		name: 'project.index',
+		params: {
+			projectId: task.value.projectId,
+		},
+	})
+}
+
+function cancelRecurrenceScope() {
+	showRecurrenceScopeModal.value = false
+
+	if (
+		recurrenceScopeAction.value === 'edit' &&
+                persistedTaskSnapshot.value
+	) {
+		Object.assign(
+			task.value,
+			klona(persistedTaskSnapshot.value),
+		)
+
+		setActiveFields()
+	}
+
+	pendingRecurrenceUpdate.value = null
+	recurrenceScopeOccurrenceOnly.value = false
+}
+
+async function submitRecurrenceScope(
+	scope: TaskRecurrenceScope,
+) {
+	if (recurrenceScopeAction.value === 'delete') {
+		await recurrenceSeriesService.deleteScoped(
+			task.value.id,
+			scope,
+		)
+
+		showRecurrenceScopeModal.value = false
+
+		kanbanStore.removeTaskInBucket(task.value)
+
+		success({
+			message: t('task.detail.deleteSuccess'),
+		})
+
+		await router.push({
+			name: 'project.index',
+			params: {
+				projectId: task.value.projectId,
+			},
+		})
+
+		return
+	}
+
+	const pending = pendingRecurrenceUpdate.value
+
+	if (!pending) {
+		showRecurrenceScopeModal.value = false
+		return
+	}
+
+	if (
+		recurrenceScopeOccurrenceOnly.value &&
+                scope !== TASK_RECURRENCE_SCOPES.OCCURRENCE
+	) {
+		return
+	}
+
+	await recurrenceSeriesService.scopedUpdate(
+		pending.task.id,
+		scope,
+		pending.fields,
+		recurrencePatch(
+			pending.task,
+			pending.fields,
+		),
+	)
+
+	Object.assign(task.value, pending.task)
+
+	updatePersistedTaskSnapshot(task.value)
+	setActiveFields()
+
+	showRecurrenceScopeModal.value = false
+	pendingRecurrenceUpdate.value = null
+	recurrenceScopeOccurrenceOnly.value = false
+
+	showTaskUpdateSuccess(
+		pending.undoCallback,
+	)
 }
 
 async function toggleTaskDone() {
