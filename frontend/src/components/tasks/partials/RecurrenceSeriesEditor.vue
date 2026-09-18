@@ -25,9 +25,14 @@
 
 		<div
 			v-if="!dueDate && !hasSeries"
-			class="notification is-warning is-light"
+			class="notification is-warning is-light recurrence-due-date-warning"
+			role="alert"
 		>
-			Set a due date for this task first. Recurrence uses it as the initial scheduled occurrence.
+			<strong>Due date required</strong>
+			<p>
+				Set a due date for this task before creating a recurrence.
+				The due date becomes the first scheduled occurrence.
+			</p>
 		</div>
 
 		<section class="editor-section">
@@ -1532,6 +1537,20 @@ watch(
 </script>
 
 <style scoped>
+.recurrence-due-date-warning {
+	margin-top: 0.75rem;
+	border-left: 4px solid var(--warning);
+}
+
+.recurrence-due-date-warning strong {
+	display: block;
+	margin-bottom: 0.25rem;
+}
+
+.recurrence-due-date-warning p {
+	margin: 0;
+}
+
 .recurrence-series-editor {
 	width: 100%;
 	max-width: 52rem;
