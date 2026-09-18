@@ -655,11 +655,28 @@
 				type="button"
 				variant="secondary"
 				:disabled="disabled || loading"
-				@click="removeRecurrence"
+				@click="showRemoveRecurrenceModal = true"
 			>
 				Remove recurrence
 			</x-button>
 		</div>
+
+		<Modal
+			:enabled="showRemoveRecurrenceModal"
+			@close="showRemoveRecurrenceModal = false"
+			@submit="removeRecurrence"
+		>
+			<template #header>
+				<span>Remove recurrence?</span>
+			</template>
+
+			<template #text>
+				<p>
+					This task and existing occurrences will remain,
+					but no new occurrences will be created.
+				</p>
+			</template>
+		</Modal>
 	</div>
 </template>
 
@@ -701,6 +718,7 @@ const errorMessage = ref('')
 const state = ref<ITaskRecurrenceSeriesState | null>(null)
 
 const showMoreOptions = ref(false)
+const showRemoveRecurrenceModal = ref(false)
 const startDateInput = ref('')
 const endDateInput = ref('')
 
@@ -1421,14 +1439,7 @@ async function save() {
 }
 
 async function removeRecurrence() {
-	const confirmed = window.confirm(
-		'Remove recurrence? This task and existing occurrences will remain, but no new occurrences will be created.',
-	)
-
-	if (!confirmed) {
-		return
-	}
-
+	showRemoveRecurrenceModal.value = false
 	loading.value = true
 	errorMessage.value = ''
 
