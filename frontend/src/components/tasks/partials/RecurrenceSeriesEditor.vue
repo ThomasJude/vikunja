@@ -795,6 +795,24 @@ function dateInputFromDate(date: Date | null) {
 	return date.toISOString().slice(0, 10)
 }
 
+function localDateInput(date: Date) {
+	const year = date.getFullYear()
+	const month = String(date.getMonth() + 1).padStart(2, '0')
+	const day = String(date.getDate()).padStart(2, '0')
+
+	return `${year}-${month}-${day}`
+}
+
+function defaultEndDateInput() {
+	const today = localDateInput(new Date())
+
+	if (startDateInput.value && startDateInput.value > today) {
+		return startDateInput.value
+	}
+
+	return today
+}
+
 function startTimestamp(date: string) {
 	if (!date) {
 		return undefined
@@ -880,9 +898,12 @@ function loadSeries(series: ITaskRecurrenceSeries) {
 		? series.startDate.slice(0, 10)
 		: dateInputFromDate(props.dueDate)
 
-	endDateInput.value = series.endDate
-		? series.endDate.slice(0, 10)
-		: ''
+	endDateInput.value =
+		series.endType === TASK_RECURRENCE_END_TYPES.DATE &&
+		series.endDate &&
+		!series.endDate.startsWith('0001-01-01')
+			? series.endDate.slice(0, 10)
+			: ''
 }
 
 async function load() {
@@ -1247,11 +1268,17 @@ function validate() {
 		}
 	}
 
-	if (
-		draft.endType === TASK_RECURRENCE_END_TYPES.DATE &&
-		!endDateInput.value
-	) {
-		throw new Error('Choose an end date.')
+	if (draft.endType === TASK_RECURRENCE_END_TYPES.DATE) {
+		if (!endDateInput.value) {
+			throw new Error('Choose an end date.')
+		}
+
+		if (
+			startDateInput.value &&
+			endDateInput.value < startDateInput.value
+		) {
+			throw new Error('End date cannot be before the start date.')
+		}
 	}
 
 	if (
@@ -1393,6 +1420,21 @@ async function togglePaused() {
 		loading.value = false
 	}
 }
+
+watch(
+	() => draft.endType,
+	endType => {
+		if (
+			endType === TASK_RECURRENCE_END_TYPES.DATE &&
+			(
+				!endDateInput.value ||
+				endDateInput.value.startsWith('0001-01-01')
+			)
+		) {
+			endDateInput.value = defaultEndDateInput()
+		}
+	},
+)
 
 watch(
 	() => props.taskId,
