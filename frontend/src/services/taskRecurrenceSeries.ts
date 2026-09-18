@@ -92,6 +92,12 @@ export default class TaskRecurrenceSeriesService {
 		return objectToCamelCase(data) as ITaskRecurrenceSeriesState
 	}
 
+	async removeRecurrence(taskId: number): Promise<void> {
+		await this.http.delete(
+			apiV2Url(`tasks/${taskId}/recurrence-series/rule`),
+		)
+	}
+
 	async scopedUpdate(
 		taskId: number,
 		scope: TaskRecurrenceScope,

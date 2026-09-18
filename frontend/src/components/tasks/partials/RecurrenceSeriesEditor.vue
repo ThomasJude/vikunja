@@ -649,6 +649,16 @@
 			>
 				{{ draft.paused ? 'Resume series' : 'Pause series' }}
 			</x-button>
+
+			<x-button
+				v-if="hasSeries"
+				type="button"
+				variant="secondary"
+				:disabled="disabled || loading"
+				@click="removeRecurrence"
+			>
+				Remove recurrence
+			</x-button>
 		</div>
 	</div>
 </template>
@@ -884,6 +894,21 @@ function copyRecurrence(source: ITaskRecurrence) {
 	}
 }
 
+function resetRecurrenceEditor() {
+	copyRecurrence(defaultRecurrence())
+
+	draft.endType = TASK_RECURRENCE_END_TYPES.NEVER
+	draft.endAfterOccurrences = 0
+	draft.createBeforeDays = 0
+	draft.weekendPolicy = TASK_RECURRENCE_WEEKEND_POLICIES.KEEP
+	draft.missedPolicy = TASK_RECURRENCE_MISSED_POLICIES.NEXT_FUTURE
+	draft.paused = false
+
+	startDateInput.value = dateInputFromDate(props.dueDate)
+	endDateInput.value = ''
+	showMoreOptions.value = false
+}
+
 function loadSeries(series: ITaskRecurrenceSeries) {
 	copyRecurrence(recurrenceFromSeries(series))
 
@@ -923,12 +948,10 @@ async function load() {
 			return
 		}
 
+		resetRecurrenceEditor()
+
 		if (props.recurrence) {
 			copyRecurrence(props.recurrence)
-		}
-
-		if (!startDateInput.value) {
-			startDateInput.value = dateInputFromDate(props.dueDate)
 		}
 	} catch (error) {
 		errorMessage.value = error instanceof Error
@@ -1385,6 +1408,37 @@ async function save() {
 		}
 
 		success({message: 'Recurrence saved.'})
+	} catch (error) {
+		const message = error instanceof Error
+			? error.message
+			: String(error)
+
+		errorMessage.value = message
+		notifyError({message})
+	} finally {
+		loading.value = false
+	}
+}
+
+async function removeRecurrence() {
+	const confirmed = window.confirm(
+		'Remove recurrence? This task and existing occurrences will remain, but no new occurrences will be created.',
+	)
+
+	if (!confirmed) {
+		return
+	}
+
+	loading.value = true
+	errorMessage.value = ''
+
+	try {
+		await service.removeRecurrence(props.taskId)
+
+		state.value = await service.get(props.taskId)
+		resetRecurrenceEditor()
+
+		success({message: 'Recurrence removed.'})
 	} catch (error) {
 		const message = error instanceof Error
 			? error.message

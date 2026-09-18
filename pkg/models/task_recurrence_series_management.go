@@ -80,6 +80,64 @@ func requireTaskRecurrenceSeriesWrite(
 	return nil
 }
 
+// RemoveTaskRecurrenceSeriesForTask removes the recurrence definition and
+// occurrence metadata without deleting any tasks. Existing task occurrences
+// become ordinary standalone tasks and no future occurrences are generated.
+func RemoveTaskRecurrenceSeriesForTask(
+	s *xorm.Session,
+	taskID int64,
+	a web.Auth,
+) error {
+	if s == nil {
+		return fmt.Errorf("database session is required")
+	}
+
+	series, _, err := getTaskRecurrenceSeriesForTask(s, taskID)
+	if err != nil {
+		return err
+	}
+
+	// Removing recurrence changes the series configuration rather than
+	// deleting a task, so normal series write permission is sufficient.
+	if err := requireTaskRecurrenceSeriesWrite(
+		s,
+		series.RootTaskID,
+		a,
+	); err != nil {
+		return err
+	}
+
+	// Remove occurrence metadata first. The actual tasks are intentionally
+	// left untouched and therefore become normal standalone tasks.
+	if _, err := s.
+		Where("series_id = ?", series.ID).
+		Delete(&TaskRecurrenceOccurrence{}); err != nil {
+		return fmt.Errorf(
+			"could not remove recurrence occurrence metadata: %w",
+			err,
+		)
+	}
+
+	affected, err := s.
+		ID(series.ID).
+		Delete(&TaskRecurrenceSeries{})
+	if err != nil {
+		return fmt.Errorf(
+			"could not remove recurrence series: %w",
+			err,
+		)
+	}
+
+	if affected != 1 {
+		return fmt.Errorf(
+			"recurrence series %d could not be removed",
+			series.ID,
+		)
+	}
+
+	return nil
+}
+
 // setTaskRecurrenceSeriesPaused changes only the execution state of a series.
 // The recurrence definition itself remains untouched.
 func setTaskRecurrenceSeriesPaused(
