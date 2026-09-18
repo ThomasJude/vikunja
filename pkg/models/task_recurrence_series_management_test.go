@@ -66,6 +66,65 @@ func TestTaskRecurrenceSeriesPauseResume(t *testing.T) {
 	assert.False(t, stored.Paused)
 }
 
+func TestRemoveTaskRecurrenceSeriesKeepsTasks(t *testing.T) {
+	f := materializeRecurrenceManagementFixture(t)
+	auth := &user.User{ID: 1}
+
+	occurrences, err := getAllTaskRecurrenceOccurrences(
+		f.s,
+		f.series.ID,
+	)
+	require.NoError(t, err)
+	require.Len(t, occurrences, 3)
+
+	taskIDs := make([]int64, 0, len(occurrences))
+	for _, occurrence := range occurrences {
+		taskIDs = append(taskIDs, occurrence.TaskID)
+
+		task, err := GetTaskByIDSimple(f.s, occurrence.TaskID)
+		require.NoError(t, err)
+		require.NotNil(t, task)
+	}
+
+	// Remove recurrence from one task in the series. This must remove only
+	// recurrence metadata and preserve every already-created task.
+	err = RemoveTaskRecurrenceSeriesForTask(
+		f.s,
+		occurrences[1].TaskID,
+		auth,
+	)
+	require.NoError(t, err)
+
+	hasSeries, err := f.s.
+		ID(f.series.ID).
+		Exist(&TaskRecurrenceSeries{})
+	require.NoError(t, err)
+	assert.False(t, hasSeries)
+
+	occurrenceCount, err := f.s.
+		Where("series_id = ?", f.series.ID).
+		Count(&TaskRecurrenceOccurrence{})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), occurrenceCount)
+
+	for _, taskID := range taskIDs {
+		task, err := GetTaskByIDSimple(f.s, taskID)
+		require.NoError(t, err)
+		require.NotNil(t, task)
+		assert.Equal(t, taskID, task.ID)
+
+		state, err := GetTaskRecurrenceSeriesState(
+			f.s,
+			taskID,
+			auth,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, state)
+		assert.Nil(t, state.Series)
+		assert.Nil(t, state.Occurrence)
+	}
+}
+
 func TestTaskRecurrenceScopedUpdate(t *testing.T) {
 	t.Run("occurrence only marks exception", func(t *testing.T) {
 		f := materializeRecurrenceManagementFixture(t)

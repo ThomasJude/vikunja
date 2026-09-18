@@ -63,6 +63,14 @@ func RegisterTaskRecurrenceSeriesRoutes(api huma.API) {
 	}, taskRecurrenceSeriesPause)
 
 	Register(api, huma.Operation{
+		OperationID: "tasks-recurrence-series-remove",
+		Summary:     "Remove a task recurrence schedule",
+		Description: "Removes the recurrence definition while preserving the current task and all already-created task occurrences.",
+		Method:      http.MethodDelete,
+		Path:        "/tasks/{task}/recurrence-series/rule",
+		Tags:        tags,
+	}, taskRecurrenceSeriesRemove)
+	Register(api, huma.Operation{
 		OperationID: "tasks-recurrence-series-scoped-update",
 		Summary:     "Update recurring task occurrences with a scope",
 		Description: "Updates only this occurrence, this and future occurrences, or all materialized occurrences in the series.",
@@ -179,6 +187,39 @@ func taskRecurrenceSeriesPause(ctx context.Context, in *struct {
 
 	return &singleBody[models.TaskRecurrenceSeriesState]{
 		Body: state,
+	}, nil
+}
+
+func taskRecurrenceSeriesRemove(ctx context.Context, in *struct {
+	TaskID int64 `path:"task" doc:"The numeric id of the task."`
+}) (*singleBody[taskRecurrenceDeleteResult], error) {
+	a, err := authFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	s := db.NewSession()
+	defer s.Close()
+
+	err = models.RemoveTaskRecurrenceSeriesForTask(
+		s,
+		in.TaskID,
+		a,
+	)
+	if err != nil {
+		_ = s.Rollback()
+		return nil, translateDomainError(err)
+	}
+
+	if err := s.Commit(); err != nil {
+		_ = s.Rollback()
+		return nil, translateDomainError(err)
+	}
+
+	return &singleBody[taskRecurrenceDeleteResult]{
+		Body: &taskRecurrenceDeleteResult{
+			Message: "success",
+		},
 	}, nil
 }
 
