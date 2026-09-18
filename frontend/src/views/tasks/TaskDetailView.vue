@@ -294,6 +294,13 @@
 								/>
 							</div>
 						</CustomTransition>
+
+						<RecurrenceSeriesStatus
+							v-if="!activeFields.repeatAfter"
+							:task-id="task.id"
+							class="column"
+							@open="setFieldActive('repeatAfter')"
+						/>
 						<CustomTransition
 							name="flash-background"
 							appear
@@ -703,6 +710,7 @@ import PrioritySelect from '@/components/tasks/partials/PrioritySelect.vue'
 import RelatedTasks from '@/components/tasks/partials/RelatedTasks.vue'
 import Reminders from '@/components/tasks/partials/Reminders.vue'
 import RepeatAfter from '@/components/tasks/partials/RepeatAfter.vue'
+import RecurrenceSeriesStatus from '@/components/tasks/partials/RecurrenceSeriesStatus.vue'
 import RecurrenceScopeDialog from '@/components/tasks/partials/RecurrenceScopeDialog.vue'
 import TaskSubscription from '@/components/misc/Subscription.vue'
 import CustomTransition from '@/components/misc/CustomTransition.vue'
