@@ -287,13 +287,12 @@ func SaveTaskRecurrenceSeriesForTask(
 	updated.ProjectID = existing.ProjectID
 	updated.CreatedByID = existing.CreatedByID
 
+	// An existing occurrence may have an occurrence-only due-date exception.
+	// The recurrence schedule anchor therefore must not be forced to match the
+	// task's current due date. If no start date was supplied, preserve the
+	// existing series anchor.
 	if updated.StartDate.IsZero() {
-		updated.StartDate = task.DueDate
-	}
-	if !updated.StartDate.Equal(task.DueDate) {
-		return nil, fmt.Errorf(
-			"recurrence start date must match the task due date",
-		)
+		updated.StartDate = existing.StartDate
 	}
 
 	if err := updateTaskRecurrenceSeries(s, &updated); err != nil {
@@ -302,17 +301,15 @@ func SaveTaskRecurrenceSeriesForTask(
 
 	_, err = s.
 		ID(existingOccurrence.ID).
-		Cols("scheduled_due_date", "due_date").
+		Cols("scheduled_due_date").
 		Update(&TaskRecurrenceOccurrence{
 			ScheduledDueDate: updated.StartDate,
-			DueDate:          task.DueDate,
 		})
 	if err != nil {
 		return nil, err
 	}
 
 	existingOccurrence.ScheduledDueDate = updated.StartDate
-	existingOccurrence.DueDate = task.DueDate
 
 	if err := removeLegacyTaskRecurrenceForSeries(
 		s,
