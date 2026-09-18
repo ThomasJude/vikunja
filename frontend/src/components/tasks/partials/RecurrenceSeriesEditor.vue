@@ -2,7 +2,6 @@
 	<div class="recurrence-series-editor">
 		<div class="editor-header">
 			<div>
-				<h3>Repeat</h3>
 				<p class="help-text">
 					Configure when this task repeats and how future occurrences are created.
 				</p>
@@ -28,46 +27,28 @@
 			v-if="!dueDate"
 			class="notification is-warning is-light"
 		>
-			Set a due date on this task before saving a recurring series.
+			Set a due date for this task first. Recurrence uses it as the initial scheduled occurrence.
 		</div>
 
 		<section class="editor-section">
 			<h4>Recurrence rule</h4>
 
 			<div class="frequency-buttons">
-				<button
+				<x-button
 					v-for="option in frequencyOptions"
 					:key="option.value"
 					type="button"
-					class="button"
-					:class="{'is-primary': rule.frequency === option.value}"
+					variant="secondary"
+					:class="{
+						'recurrence-choice-active':
+							rule.frequency === option.value,
+					}"
+					:aria-pressed="rule.frequency === option.value"
 					:disabled="disabled || loading"
 					@click="selectFrequency(option.value)"
 				>
 					{{ option.label }}
-				</button>
-			</div>
-
-			<div class="preset-row">
-				<span class="preset-label">Presets:</span>
-
-				<button
-					type="button"
-					class="button is-small"
-					:disabled="disabled || loading"
-					@click="applyWeekdaysPreset"
-				>
-					Weekdays
-				</button>
-
-				<button
-					type="button"
-					class="button is-small"
-					:disabled="disabled || loading"
-					@click="applyQuarterlyPreset"
-				>
-					Quarterly
-				</button>
+				</x-button>
 			</div>
 
 			<div
@@ -83,7 +64,7 @@
 						min="1"
 						:disabled="disabled || loading"
 					>
-					day(s)
+					{{ rule.interval === 1 ? 'day' : 'days' }}
 				</label>
 			</div>
 
@@ -100,21 +81,47 @@
 						min="1"
 						:disabled="disabled || loading"
 					>
-					week(s) on
+					{{ rule.interval === 1 ? 'week' : 'weeks' }} on
 				</label>
+				<div class="preset-row">
+					<span class="preset-label">Preset:</span>
+
+					<x-button
+						type="button"
+						variant="secondary"
+						:class="{
+							'recurrence-choice-active':
+								rule.interval === 1 &&
+								rule.byWeekdays === 62,
+						}"
+						:aria-pressed="
+							rule.interval === 1 &&
+								rule.byWeekdays === 62
+						"
+						:disabled="disabled || loading"
+						@click="applyWeekdaysPreset"
+					>
+						Weekdays
+					</x-button>
+				</div>
+
 
 				<div class="weekday-buttons">
-					<button
+					<x-button
 						v-for="weekday in weekdayOptions"
 						:key="weekday.bit"
 						type="button"
-						class="button is-small"
-						:class="{'is-primary': hasWeekday(weekday.bit)}"
+						variant="secondary"
+						:class="{
+							'recurrence-choice-active':
+								hasWeekday(weekday.bit),
+						}"
+						:aria-pressed="hasWeekday(weekday.bit)"
 						:disabled="disabled || loading"
 						@click="toggleWeekday(weekday.bit)"
 					>
 						{{ weekday.short }}
-					</button>
+					</x-button>
 				</div>
 			</div>
 
@@ -131,8 +138,26 @@
 						min="1"
 						:disabled="disabled || loading"
 					>
-					month(s)
+					{{ rule.interval === 1 ? 'month' : 'months' }}
 				</label>
+				<div class="preset-row">
+					<span class="preset-label">Preset:</span>
+
+					<x-button
+						type="button"
+						variant="secondary"
+						:class="{
+							'recurrence-choice-active':
+								rule.interval === 3,
+						}"
+						:aria-pressed="rule.interval === 3"
+						:disabled="disabled || loading"
+						@click="applyQuarterlyPreset"
+					>
+						Quarterly
+					</x-button>
+				</div>
+
 
 				<div class="rule-choice">
 					<label>
@@ -202,40 +227,49 @@
 					</template>
 				</div>
 
+
 				<div class="advanced-rule-option">
-					<label>
-						If the requested date does not exist
+					<label
+						v-if="monthlyRuleType === 'monthDay'"
+						class="field"
+					>
+						<span>If the requested day does not exist</span>
+
 						<span class="select">
 							<select
 								v-model.number="rule.missingPolicy"
 								:disabled="disabled || loading"
 							>
-								<template v-if="monthlyRuleType === 'monthDay'">
-									<option :value="TASK_RECURRENCE_MISSING_POLICIES.DEFAULT">
-										Default behavior
-									</option>
-									<option :value="TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID">
-										Use last valid day
-									</option>
-									<option :value="TASK_RECURRENCE_MISSING_POLICIES.SKIP">
-										Skip that month
-									</option>
-								</template>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID">
+									Use the last day of the month
+								</option>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.SKIP">
+									Skip that occurrence
+								</option>
+							</select>
+						</span>
+					</label>
 
-								<template v-else>
-									<option :value="TASK_RECURRENCE_MISSING_POLICIES.DEFAULT">
-										Default behavior
-									</option>
-									<option :value="TASK_RECURRENCE_MISSING_POLICIES.SKIP">
-										Skip that month
-									</option>
-									<option :value="TASK_RECURRENCE_MISSING_POLICIES.LAST_OCCURRENCE">
-										Use last occurrence
-									</option>
-									<option :value="TASK_RECURRENCE_MISSING_POLICIES.NEXT_PERIOD">
-										Use first occurrence next month
-									</option>
-								</template>
+					<label
+						v-else-if="rule.bySetPos === 5"
+						class="field"
+					>
+						<span>If the selected fifth weekday does not exist</span>
+
+						<span class="select">
+							<select
+								v-model.number="rule.missingPolicy"
+								:disabled="disabled || loading"
+							>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.SKIP">
+									Skip that month
+								</option>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.LAST_OCCURRENCE">
+									Use the last occurrence of that weekday
+								</option>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.NEXT_PERIOD">
+									Use the first occurrence of that weekday in the following month
+								</option>
 							</select>
 						</span>
 					</label>
@@ -255,7 +289,7 @@
 						min="1"
 						:disabled="disabled || loading"
 					>
-					year(s)
+					{{ rule.interval === 1 ? 'year' : 'years' }}
 				</label>
 
 				<div class="rule-choice">
@@ -359,44 +393,96 @@
 					</template>
 				</div>
 
+
 				<div class="advanced-rule-option">
-					<label>
-						If the requested date does not exist
+					<label
+						v-if="yearlyRuleType === 'monthDay'"
+						class="field"
+					>
+						<span>If the requested date does not exist</span>
+
 						<span class="select">
 							<select
 								v-model.number="rule.missingPolicy"
 								:disabled="disabled || loading"
 							>
-								<option :value="TASK_RECURRENCE_MISSING_POLICIES.DEFAULT">
-									Default behavior
-								</option>
 								<option :value="TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID">
-									Use last valid date
+									Use the last day of the month
 								</option>
 								<option :value="TASK_RECURRENCE_MISSING_POLICIES.SKIP">
-									Skip that year
+									Skip that occurrence
 								</option>
-								<option
-									v-if="yearlyRuleType === 'ordinal'"
-									:value="TASK_RECURRENCE_MISSING_POLICIES.LAST_OCCURRENCE"
-								>
-									Use last occurrence
+							</select>
+						</span>
+					</label>
+
+					<label
+						v-else-if="rule.bySetPos === 5"
+						class="field"
+					>
+						<span>If the selected fifth weekday does not exist</span>
+
+						<span class="select">
+							<select
+								v-model.number="rule.missingPolicy"
+								:disabled="disabled || loading"
+							>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.SKIP">
+									Skip that occurrence
 								</option>
-								<option
-									v-if="yearlyRuleType === 'ordinal'"
-									:value="TASK_RECURRENCE_MISSING_POLICIES.NEXT_PERIOD"
-								>
-									Use first occurrence next period
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.LAST_OCCURRENCE">
+									Use the last occurrence of that weekday
+								</option>
+								<option :value="TASK_RECURRENCE_MISSING_POLICIES.NEXT_PERIOD">
+									Use the first occurrence of that weekday in the following month
 								</option>
 							</select>
 						</span>
 					</label>
 				</div>
 			</div>
+
+			<div class="rule-start-date">
+				<label class="field">
+					<span>Start date</span>
+
+					<input
+						v-model="startDateInput"
+						class="input"
+						type="date"
+						required
+						:disabled="disabled || loading"
+					>
+				</label>
+
+				<p class="help-text">
+					The recurrence begins from this date.
+				</p>
+			</div>
 		</section>
 
 		<section class="editor-section">
-			<h4>Repeat behavior</h4>
+			<h4>Create timing</h4>
+
+			<label class="inline-field">
+				Create task
+				<input
+					v-model.number="draft.createBeforeDays"
+					class="input recurrence-number"
+					type="number"
+					min="0"
+					:disabled="disabled || loading"
+				>
+				{{ draft.createBeforeDays === 1 ? 'day' : 'days' }} before due date
+			</label>
+
+			<p class="help-text">
+				Use 0 to create the task on its due date.
+			</p>
+		</section>
+
+		<section class="editor-section">
+			<h4>Schedule vs. completion</h4>
 
 			<label class="radio-row">
 				<input
@@ -425,106 +511,71 @@
 			</label>
 		</section>
 
-		<section class="editor-section two-column">
-			<div>
-				<h4>Start</h4>
-
-				<label class="field">
-					<span>Start date</span>
-					<input
-						v-model="startDateInput"
-						class="input"
-						type="date"
-						:disabled="disabled || loading"
-					>
-				</label>
-			</div>
-
-			<div>
-				<h4>Ends</h4>
-
-				<label class="radio-simple">
-					<input
-						v-model.number="draft.endType"
-						type="radio"
-						:value="TASK_RECURRENCE_END_TYPES.NEVER"
-						:disabled="disabled || loading"
-					>
-					Never
-				</label>
-
-				<label class="radio-simple">
-					<input
-						v-model.number="draft.endType"
-						type="radio"
-						:value="TASK_RECURRENCE_END_TYPES.DATE"
-						:disabled="disabled || loading"
-					>
-					On date
-				</label>
-
-				<input
-					v-if="draft.endType === TASK_RECURRENCE_END_TYPES.DATE"
-					v-model="endDateInput"
-					class="input"
-					type="date"
-					:disabled="disabled || loading"
-				>
-
-				<label class="radio-simple">
-					<input
-						v-model.number="draft.endType"
-						type="radio"
-						:value="TASK_RECURRENCE_END_TYPES.OCCURRENCES"
-						:disabled="disabled || loading"
-					>
-					After
-				</label>
-
-				<label
-					v-if="draft.endType === TASK_RECURRENCE_END_TYPES.OCCURRENCES"
-					class="inline-field"
-				>
-					<input
-						v-model.number="draft.endAfterOccurrences"
-						class="input recurrence-number"
-						type="number"
-						min="1"
-						:disabled="disabled || loading"
-					>
-					occurrences
-				</label>
-			</div>
-		</section>
-
 		<section class="editor-section">
-			<h4>Create timing</h4>
+			<h4>End condition</h4>
 
-			<label class="inline-field">
-				Create task
+			<label class="radio-simple">
 				<input
-					v-model.number="draft.createBeforeDays"
-					class="input recurrence-number"
-					type="number"
-					min="0"
+					v-model.number="draft.endType"
+					type="radio"
+					:value="TASK_RECURRENCE_END_TYPES.NEVER"
 					:disabled="disabled || loading"
 				>
-				day(s) before due date
+				Never
 			</label>
 
-			<p class="help-text">
-				Use 0 to create the task on its due date.
-			</p>
+			<label class="radio-simple">
+				<input
+					v-model.number="draft.endType"
+					type="radio"
+					:value="TASK_RECURRENCE_END_TYPES.DATE"
+					:disabled="disabled || loading"
+				>
+				On date
+			</label>
+
+			<input
+				v-if="draft.endType === TASK_RECURRENCE_END_TYPES.DATE"
+				v-model="endDateInput"
+				class="input"
+				type="date"
+				:disabled="disabled || loading"
+			>
+
+			<label class="radio-simple">
+				<input
+					v-model.number="draft.endType"
+					type="radio"
+					:value="TASK_RECURRENCE_END_TYPES.OCCURRENCES"
+					:disabled="disabled || loading"
+				>
+				After
+			</label>
+
+			<label
+				v-if="draft.endType === TASK_RECURRENCE_END_TYPES.OCCURRENCES"
+				class="inline-field"
+			>
+				<input
+					v-model.number="draft.endAfterOccurrences"
+					class="input recurrence-number"
+					type="number"
+					min="1"
+					:disabled="disabled || loading"
+				>
+				occurrences
+			</label>
 		</section>
 
 		<section class="editor-section">
-			<button
+			<x-button
 				type="button"
-				class="button is-text more-options-button"
+				variant="secondary"
+				:disabled="disabled || loading"
 				@click="showMoreOptions = !showMoreOptions"
 			>
 				{{ showMoreOptions ? 'Hide more options' : 'More options' }}
-			</button>
+			</x-button>
 
 			<div
 				v-if="showMoreOptions"
@@ -580,26 +631,24 @@
 		</section>
 
 		<div class="editor-actions">
-			<button
+			<x-button
 				type="button"
-				class="button is-primary"
-				:class="{'is-loading': loading}"
-				:disabled="disabled || loading || !dueDate"
+				:loading="loading"
+				:disabled="disabled || !dueDate"
 				@click="save"
 			>
 				Save recurrence
-			</button>
+			</x-button>
 
-			<button
+			<x-button
 				v-if="hasSeries"
 				type="button"
-				class="button"
-				:class="draft.paused ? 'is-success' : 'is-warning'"
+				variant="secondary"
 				:disabled="disabled || loading"
 				@click="togglePaused"
 			>
 				{{ draft.paused ? 'Resume series' : 'Pause series' }}
-			</button>
+			</x-button>
 		</div>
 	</div>
 </template>
@@ -721,7 +770,7 @@ function defaultRecurrence(): ITaskRecurrence {
 		byMonth: dueMonth(),
 		byMonthDay: dueMonthDay(),
 		bySetPos: 1,
-		missingPolicy: TASK_RECURRENCE_MISSING_POLICIES.DEFAULT,
+		missingPolicy: TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID,
 	}
 }
 
@@ -771,6 +820,7 @@ function recurrenceFromSeries(series: ITaskRecurrenceSeries): ITaskRecurrence {
 	}
 }
 
+
 function copyRecurrence(source: ITaskRecurrence) {
 	rule.frequency = source.frequency
 	rule.interval = source.interval
@@ -779,7 +829,6 @@ function copyRecurrence(source: ITaskRecurrence) {
 	rule.byMonth = source.byMonth
 	rule.byMonthDay = source.byMonthDay
 	rule.bySetPos = source.bySetPos
-	rule.missingPolicy = source.missingPolicy
 
 	monthlyRuleType.value = source.byMonthDay > 0
 		? 'monthDay'
@@ -788,6 +837,20 @@ function copyRecurrence(source: ITaskRecurrence) {
 	yearlyRuleType.value = source.byMonthDay > 0
 		? 'monthDay'
 		: 'ordinal'
+
+	if (
+		source.missingPolicy === TASK_RECURRENCE_MISSING_POLICIES.DEFAULT &&
+		(
+			source.frequency === TASK_RECURRENCE_FREQUENCIES.MONTH ||
+			source.frequency === TASK_RECURRENCE_FREQUENCIES.YEAR
+		)
+	) {
+		rule.missingPolicy = source.byMonthDay > 0
+			? TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
+			: TASK_RECURRENCE_MISSING_POLICIES.SKIP
+	} else {
+		rule.missingPolicy = source.missingPolicy
+	}
 }
 
 function loadSeries(series: ITaskRecurrenceSeries) {
@@ -844,12 +907,13 @@ async function load() {
 	}
 }
 
+
 function selectFrequency(frequency: TaskRecurrenceFrequency) {
 	rule.frequency = frequency
 	rule.interval = Math.max(1, rule.interval || 1)
-	rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.DEFAULT
 
 	if (frequency === TASK_RECURRENCE_FREQUENCIES.DAY) {
+		rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.DEFAULT
 		rule.byWeekdays = 0
 		rule.byMonth = 0
 		rule.byMonthDay = 0
@@ -858,6 +922,7 @@ function selectFrequency(frequency: TaskRecurrenceFrequency) {
 	}
 
 	if (frequency === TASK_RECURRENCE_FREQUENCIES.WEEK) {
+		rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.DEFAULT
 		rule.byWeekdays = dueWeekdayBit()
 		rule.byMonth = 0
 		rule.byMonthDay = 0
@@ -867,6 +932,7 @@ function selectFrequency(frequency: TaskRecurrenceFrequency) {
 
 	if (frequency === TASK_RECURRENCE_FREQUENCIES.MONTH) {
 		monthlyRuleType.value = 'monthDay'
+		rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
 		rule.byWeekdays = 0
 		rule.byMonth = 0
 		rule.byMonthDay = dueMonthDay()
@@ -875,38 +941,45 @@ function selectFrequency(frequency: TaskRecurrenceFrequency) {
 	}
 
 	yearlyRuleType.value = 'monthDay'
+	rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
 	rule.byWeekdays = 0
 	rule.byMonth = dueMonth()
 	rule.byMonthDay = dueMonthDay()
 	rule.bySetPos = 0
 }
 
+
 function setMonthlyRuleType(type: RuleType) {
 	monthlyRuleType.value = type
 
 	if (type === 'monthDay') {
+		rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
 		rule.byMonthDay = dueMonthDay()
 		rule.byWeekdays = 0
 		rule.bySetPos = 0
 		return
 	}
 
+	rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.SKIP
 	rule.byMonthDay = 0
 	rule.byWeekdays = dueWeekdayBit()
 	rule.bySetPos = 1
 }
+
 
 function setYearlyRuleType(type: RuleType) {
 	yearlyRuleType.value = type
 	rule.byMonth = rule.byMonth || dueMonth()
 
 	if (type === 'monthDay') {
+		rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
 		rule.byMonthDay = dueMonthDay()
 		rule.byWeekdays = 0
 		rule.bySetPos = 0
 		return
 	}
 
+	rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.SKIP
 	rule.byMonthDay = 0
 	rule.byWeekdays = dueWeekdayBit()
 	rule.bySetPos = 1
@@ -924,16 +997,15 @@ function toggleWeekday(bit: number) {
 	}
 }
 
+
 function applyWeekdaysPreset() {
-	selectFrequency(TASK_RECURRENCE_FREQUENCIES.WEEK)
 	rule.interval = 1
 	rule.byWeekdays = 2 | 4 | 8 | 16 | 32
 }
 
+
 function applyQuarterlyPreset() {
-	selectFrequency(TASK_RECURRENCE_FREQUENCIES.MONTH)
 	rule.interval = 3
-	rule.byMonthDay = dueMonthDay()
 }
 
 function ordinalLabel(position: number) {
@@ -951,6 +1023,42 @@ function monthLabel(month: number) {
 		?? 'selected month'
 }
 
+
+function dayOfMonthLabel(day: number) {
+	const mod100 = day % 100
+
+	if (mod100 >= 11 && mod100 <= 13) {
+		return `${day}th`
+	}
+
+	switch (day % 10) {
+		case 1:
+			return `${day}st`
+		case 2:
+			return `${day}nd`
+		case 3:
+			return `${day}rd`
+		default:
+			return `${day}th`
+	}
+}
+
+function formatList(values: string[]) {
+	if (values.length === 0) {
+		return 'no weekdays selected'
+	}
+
+	if (values.length === 1) {
+		return values[0]
+	}
+
+	if (values.length === 2) {
+		return `${values[0]} and ${values[1]}`
+	}
+
+	return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`
+}
+
 const summary = computed(() => {
 	const interval = Math.max(1, rule.interval || 1)
 
@@ -964,56 +1072,105 @@ const summary = computed(() => {
 			break
 
 		case TASK_RECURRENCE_FREQUENCIES.WEEK: {
+			if (interval === 1 && rule.byWeekdays === 62) {
+				text = 'Every weekday'
+				break
+			}
+
 			const days = weekdayOptions
 				.filter(day => hasWeekday(day.bit))
-				.map(day => day.short)
-				.join(', ')
+				.map(day => day.label)
 
 			text = interval === 1
-				? `Every week on ${days || 'no weekdays selected'}`
-				: `Every ${interval} weeks on ${days || 'no weekdays selected'}`
+				? `Every week on ${formatList(days)}`
+				: `Every ${interval} weeks on ${formatList(days)}`
 			break
 		}
 
 		case TASK_RECURRENCE_FREQUENCIES.MONTH:
-			text = interval === 1
-				? 'Every month'
-				: `Every ${interval} months`
-
 			if (monthlyRuleType.value === 'monthDay') {
-				text += ` on day ${rule.byMonthDay}`
+				text = interval === 1
+					? `Every month on the ${dayOfMonthLabel(rule.byMonthDay)}`
+					: `Every ${interval} months on the ${dayOfMonthLabel(rule.byMonthDay)}`
+
+				if (rule.byMonthDay >= 29) {
+					if (
+						rule.missingPolicy ===
+                                                TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
+					) {
+						text += ', using the last day of the month when needed'
+					} else if (
+						rule.missingPolicy ===
+                                                TASK_RECURRENCE_MISSING_POLICIES.SKIP
+					) {
+						text += ', skipping months without that date'
+					}
+				}
 			} else {
-				text += ` on the ${ordinalLabel(rule.bySetPos)} ${weekdayLabel(rule.byWeekdays)}`
+				text = interval === 1
+					? `The ${ordinalLabel(rule.bySetPos)} ${weekdayLabel(rule.byWeekdays)} of every month`
+					: `The ${ordinalLabel(rule.bySetPos)} ${weekdayLabel(rule.byWeekdays)} every ${interval} months`
+
+				if (rule.bySetPos === 5) {
+					if (
+						rule.missingPolicy ===
+                                                TASK_RECURRENCE_MISSING_POLICIES.SKIP
+					) {
+						text += ', skipping months without one'
+					} else if (
+						rule.missingPolicy ===
+                                                TASK_RECURRENCE_MISSING_POLICIES.LAST_OCCURRENCE
+					) {
+						text += ', using the last occurrence when a fifth does not exist'
+					} else if (
+						rule.missingPolicy ===
+                                                TASK_RECURRENCE_MISSING_POLICIES.NEXT_PERIOD
+					) {
+						text += ', using the first occurrence in the following month when needed'
+					}
+				}
 			}
 			break
 
 		case TASK_RECURRENCE_FREQUENCIES.YEAR:
-			text = interval === 1
-				? 'Every year'
-				: `Every ${interval} years`
-
 			if (yearlyRuleType.value === 'monthDay') {
-				text += ` on ${monthLabel(rule.byMonth)} ${rule.byMonthDay}`
+				text = interval === 1
+					? `Every year on ${monthLabel(rule.byMonth)} ${rule.byMonthDay}`
+					: `Every ${interval} years on ${monthLabel(rule.byMonth)} ${rule.byMonthDay}`
 			} else {
-				text += ` on the ${ordinalLabel(rule.bySetPos)} ${weekdayLabel(rule.byWeekdays)} of ${monthLabel(rule.byMonth)}`
+				text = interval === 1
+					? `Every year on the ${ordinalLabel(rule.bySetPos)} ${weekdayLabel(rule.byWeekdays)} of ${monthLabel(rule.byMonth)}`
+					: `Every ${interval} years on the ${ordinalLabel(rule.bySetPos)} ${weekdayLabel(rule.byWeekdays)} of ${monthLabel(rule.byMonth)}`
+
+				if (
+					rule.bySetPos === 5 &&
+                                        rule.missingPolicy ===
+                                        TASK_RECURRENCE_MISSING_POLICIES.SKIP
+				) {
+					text += ', skipping years without one'
+				}
 			}
 			break
 	}
 
-	text += rule.basis === TASK_RECURRENCE_BASES.COMPLETION
-		? ', repeating after completion'
-		: ', repeating on schedule'
-
-	if (draft.createBeforeDays > 0) {
-		text += `, created ${draft.createBeforeDays} day(s) before the due date`
+	if (rule.basis === TASK_RECURRENCE_BASES.COMPLETION) {
+		text += ' after completion'
 	}
 
-	if (draft.endType === TASK_RECURRENCE_END_TYPES.DATE && endDateInput.value) {
-		text += `, ending ${endDateInput.value}`
-	} else if (draft.endType === TASK_RECURRENCE_END_TYPES.OCCURRENCES) {
+	if (draft.createBeforeDays > 0) {
+		const unit = draft.createBeforeDays === 1 ? 'day' : 'days'
+		text += `, created ${draft.createBeforeDays} ${unit} before the due date`
+	}
+
+	if (
+		draft.endType === TASK_RECURRENCE_END_TYPES.DATE &&
+                endDateInput.value
+	) {
+		text += `, ending on ${endDateInput.value}`
+	} else if (
+		draft.endType === TASK_RECURRENCE_END_TYPES.OCCURRENCES
+	) {
 		text += `, ending after ${Math.max(1, draft.endAfterOccurrences)} occurrences`
-	} else {
-		text += ', never ending'
 	}
 
 	return `${text}.`
@@ -1026,6 +1183,10 @@ function validate() {
 
 	if (!props.dueDate) {
 		throw new Error('Set a due date before saving the recurring series.')
+	}
+
+	if (!startDateInput.value) {
+		throw new Error('Choose a start date.')
 	}
 
 	if (!Number.isInteger(rule.interval) || rule.interval < 1) {
@@ -1253,6 +1414,17 @@ watch(
 	margin-top: 0.75rem;
 }
 
+
+.frequency-buttons,
+.preset-row,
+.weekday-buttons,
+.editor-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+}
+
 .preset-label {
 	font-weight: 600;
 }
@@ -1295,6 +1467,10 @@ watch(
 	margin-top: 0.75rem;
 }
 
+.rule-start-date {
+        margin-top: 1rem;
+}
+
 .advanced-rule-option {
 	margin-top: 1rem;
 }
@@ -1303,10 +1479,6 @@ watch(
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 2rem;
-}
-
-.more-options-button {
-	padding-inline: 0;
 }
 
 .more-options {
@@ -1334,4 +1506,10 @@ watch(
 		grid-template-columns: 1fr;
 	}
 }
+
+.recurrence-choice-active {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+}
+
 </style>
