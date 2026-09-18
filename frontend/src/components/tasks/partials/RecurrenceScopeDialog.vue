@@ -146,6 +146,8 @@ function submit() {
 	padding: 0.85rem;
 	border: 1px solid var(--grey-200);
 	border-radius: 0.4rem;
+	background: var(--scheme-main);
+	color: var(--text);
 	cursor: pointer;
 }
 
