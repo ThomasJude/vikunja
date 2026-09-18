@@ -673,6 +673,7 @@ import {
 } from '@/modelTypes/ITaskRecurrenceSeries'
 
 import TaskRecurrenceSeriesService from '@/services/taskRecurrenceSeries'
+import {error as notifyError, success} from '@/message'
 
 type RuleType = 'monthDay' | 'ordinal'
 
@@ -762,10 +763,10 @@ function defaultRecurrence(): ITaskRecurrence {
 		frequency: TASK_RECURRENCE_FREQUENCIES.MONTH,
 		interval: 1,
 		basis: TASK_RECURRENCE_BASES.SCHEDULE,
-		byWeekdays: dueWeekdayBit(),
-		byMonth: dueMonth(),
+		byWeekdays: 0,
+		byMonth: 0,
 		byMonthDay: dueMonthDay(),
-		bySetPos: 1,
+		bySetPos: 0,
 		missingPolicy: TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID,
 	}
 }
@@ -1261,6 +1262,51 @@ function validate() {
 	}
 }
 
+function sanitizedRule(): ITaskRecurrence {
+	const clean: ITaskRecurrence = {
+		frequency: rule.frequency,
+		interval: Math.max(1, rule.interval),
+		basis: rule.basis,
+		byWeekdays: 0,
+		byMonth: 0,
+		byMonthDay: 0,
+		bySetPos: 0,
+		missingPolicy: TASK_RECURRENCE_MISSING_POLICIES.DEFAULT,
+	}
+
+	if (rule.frequency === TASK_RECURRENCE_FREQUENCIES.WEEK) {
+		clean.byWeekdays = rule.byWeekdays
+		return clean
+	}
+
+	if (rule.frequency === TASK_RECURRENCE_FREQUENCIES.MONTH) {
+		clean.missingPolicy = rule.missingPolicy
+
+		if (monthlyRuleType.value === 'monthDay') {
+			clean.byMonthDay = rule.byMonthDay
+		} else {
+			clean.byWeekdays = rule.byWeekdays
+			clean.bySetPos = rule.bySetPos
+		}
+
+		return clean
+	}
+
+	if (rule.frequency === TASK_RECURRENCE_FREQUENCIES.YEAR) {
+		clean.byMonth = rule.byMonth
+		clean.missingPolicy = rule.missingPolicy
+
+		if (yearlyRuleType.value === 'monthDay') {
+			clean.byMonthDay = rule.byMonthDay
+		} else {
+			clean.byWeekdays = rule.byWeekdays
+			clean.bySetPos = rule.bySetPos
+		}
+	}
+
+	return clean
+}
+
 function buildSeries(): ITaskRecurrenceSeries {
 	validate()
 
@@ -1269,7 +1315,7 @@ function buildSeries(): ITaskRecurrenceSeries {
 	}
 
 	const series: ITaskRecurrenceSeries = {
-		...rule,
+		...sanitizedRule(),
 		endType: draft.endType,
 		endAfterOccurrences:
 			draft.endType === TASK_RECURRENCE_END_TYPES.OCCURRENCES
@@ -1310,10 +1356,15 @@ async function save() {
 		if (saved.series) {
 			loadSeries(saved.series)
 		}
+
+		success({message: 'Recurrence saved.'})
 	} catch (error) {
-		errorMessage.value = error instanceof Error
+		const message = error instanceof Error
 			? error.message
 			: String(error)
+
+		errorMessage.value = message
+		notifyError({message})
 	} finally {
 		loading.value = false
 	}
