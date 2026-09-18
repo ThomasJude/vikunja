@@ -1,5 +1,5 @@
 import {apiV2Url, AuthenticatedHTTPFactory} from '@/helpers/fetcher'
-import {objectToSnakeCase} from '@/helpers/case'
+import {objectToCamelCase, objectToSnakeCase} from '@/helpers/case'
 
 import type {ITask} from '@/modelTypes/ITask'
 import type {
@@ -37,7 +37,7 @@ export default class TaskRecurrenceSeriesService {
 			apiV2Url(`tasks/${taskId}/recurrence-series`),
 		)
 
-		return data as ITaskRecurrenceSeriesState
+		return objectToCamelCase(data) as ITaskRecurrenceSeriesState
 	}
 
 	async save(
@@ -77,7 +77,7 @@ export default class TaskRecurrenceSeriesService {
 			objectToSnakeCase(payload),
 		)
 
-		return data as ITaskRecurrenceSeriesState
+		return objectToCamelCase(data) as ITaskRecurrenceSeriesState
 	}
 
 	async setPaused(
@@ -89,7 +89,7 @@ export default class TaskRecurrenceSeriesService {
 			{paused},
 		)
 
-		return data as ITaskRecurrenceSeriesState
+		return objectToCamelCase(data) as ITaskRecurrenceSeriesState
 	}
 
 	async scopedUpdate(
@@ -107,7 +107,7 @@ export default class TaskRecurrenceSeriesService {
 			}),
 		)
 
-		return data as ITaskRecurrenceSeriesState
+		return objectToCamelCase(data) as ITaskRecurrenceSeriesState
 	}
 
 	async deleteScoped(

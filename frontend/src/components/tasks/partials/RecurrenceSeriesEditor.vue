@@ -24,7 +24,7 @@
 		</div>
 
 		<div
-			v-if="!dueDate"
+			v-if="!dueDate && !hasSeries"
 			class="notification is-warning is-light"
 		>
 			Set a due date for this task first. Recurrence uses it as the initial scheduled occurrence.
@@ -634,7 +634,7 @@
 			<x-button
 				type="button"
 				:loading="loading"
-				:disabled="disabled || !dueDate"
+				:disabled="disabled || (!dueDate && !hasSeries)"
 				@click="save"
 			>
 				Save recurrence
@@ -681,10 +681,6 @@ const props = defineProps<{
 	dueDate: Date | null
 	recurrence: ITaskRecurrence | null
 	disabled?: boolean
-}>()
-
-const emit = defineEmits<{
-	'update:recurrence': [value: ITaskRecurrence | null]
 }>()
 
 const service = new TaskRecurrenceSeriesService()
@@ -788,7 +784,10 @@ const draft = reactive({
 const hasSeries = computed(() => Boolean(state.value?.series))
 
 function dateInputFromDate(date: Date | null) {
-	if (!date) {
+	if (
+		!(date instanceof Date) ||
+		Number.isNaN(date.getTime())
+	) {
 		return ''
 	}
 
@@ -800,11 +799,24 @@ function startTimestamp(date: string) {
 		return undefined
 	}
 
-	const suffix = props.dueDate
-		? props.dueDate.toISOString().slice(10)
-		: 'T12:00:00.000Z'
+	if (
+		props.dueDate instanceof Date &&
+		!Number.isNaN(props.dueDate.getTime())
+	) {
+		return `${date}${props.dueDate.toISOString().slice(10)}`
+	}
 
-	return `${date}${suffix}`
+	const existingStartDate = state.value?.series?.startDate
+
+	if (existingStartDate) {
+		const parsedStartDate = new Date(existingStartDate)
+
+		if (!Number.isNaN(parsedStartDate.getTime())) {
+			return `${date}${parsedStartDate.toISOString().slice(10)}`
+		}
+	}
+
+	return `${date}T12:00:00.000Z`
 }
 
 function recurrenceFromSeries(series: ITaskRecurrenceSeries): ITaskRecurrence {
@@ -870,8 +882,6 @@ function loadSeries(series: ITaskRecurrenceSeries) {
 	endDateInput.value = series.endDate
 		? series.endDate.slice(0, 10)
 		: ''
-
-	emit('update:recurrence', recurrenceFromSeries(series))
 }
 
 async function load() {
