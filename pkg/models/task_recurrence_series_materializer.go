@@ -277,8 +277,14 @@ func materializeTaskRecurrenceSeriesOccurrence(
 		plan.DueDate,
 	)
 
-	// The planner is authoritative, including weekend adjustments.
-	newTask.DueDate = plan.DueDate
+	// Preserve whether this recurring task series actually uses task due dates.
+	// The recurrence calendar itself is tracked by occurrence metadata.
+	if rootTask.DueDate.IsZero() {
+		newTask.DueDate = time.Time{}
+	} else {
+		// The planner is authoritative, including weekend adjustments.
+		newTask.DueDate = plan.DueDate
+	}
 
 	// Generated series occurrences must not trigger Vikunja's old in-place
 	// repeat mechanism when completed.
