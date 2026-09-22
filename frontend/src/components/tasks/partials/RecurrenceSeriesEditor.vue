@@ -23,17 +23,7 @@
 			{{ errorMessage }}
 		</div>
 
-		<div
-			v-if="!dueDate && !hasSeries"
-			class="notification is-warning is-light recurrence-due-date-warning"
-			role="alert"
-		>
-			<strong>Due date required</strong>
-			<p>
-				Set a due date for this task before creating a recurrence.
-				The due date becomes the first scheduled occurrence.
-			</p>
-		</div>
+
 
 		<section class="editor-section">
 			<h4>Recurrence rule</h4>
@@ -466,7 +456,10 @@
 			</div>
 		</section>
 
-		<section class="editor-section">
+		<section
+			v-if="dueDate"
+			class="editor-section"
+		>
 			<h4>Create timing</h4>
 
 			<label class="inline-field">
@@ -639,7 +632,7 @@
 			<x-button
 				type="button"
 				:loading="loading"
-				:disabled="disabled || (!dueDate && !hasSeries)"
+				:disabled="disabled || loading"
 				@click="save"
 			>
 				Save recurrence
@@ -724,7 +717,7 @@ const state = ref<ITaskRecurrenceSeriesState | null>(null)
 
 const showMoreOptions = ref(false)
 const showRemoveRecurrenceModal = ref(false)
-const startDateInput = ref('')
+const startDateInput = ref(localDateInput(new Date()))
 const endDateInput = ref('')
 
 const monthlyRuleType = ref<RuleType>('monthDay')
@@ -771,20 +764,38 @@ const monthOptions = [
 	{value: 12, label: 'December'},
 ]
 
-function dueMonth() {
-	return props.dueDate ? props.dueDate.getMonth() + 1 : 1
-}
+function recurrenceAnchorDate() {
+	const value = startDateInput.value
 
-function dueMonthDay() {
-	return props.dueDate ? props.dueDate.getDate() : 1
-}
+	if (value) {
+		const [year, month, day] = value.split('-').map(Number)
 
-function dueWeekdayBit() {
-	if (!props.dueDate) {
-		return 2
+		if (
+			Number.isInteger(year) &&
+			Number.isInteger(month) &&
+			Number.isInteger(day)
+		) {
+			const parsed = new Date(year, month - 1, day)
+
+			if (!Number.isNaN(parsed.getTime())) {
+				return parsed
+			}
+		}
 	}
 
-	const jsDay = props.dueDate.getDay()
+	return new Date()
+}
+
+function anchorMonth() {
+	return recurrenceAnchorDate().getMonth() + 1
+}
+
+function anchorMonthDay() {
+	return recurrenceAnchorDate().getDate()
+}
+
+function anchorWeekdayBit() {
+	const jsDay = recurrenceAnchorDate().getDay()
 
 	return jsDay === 0
 		? 1
@@ -798,7 +809,7 @@ function defaultRecurrence(): ITaskRecurrence {
 		basis: TASK_RECURRENCE_BASES.SCHEDULE,
 		byWeekdays: 0,
 		byMonth: 0,
-		byMonthDay: dueMonthDay(),
+		byMonthDay: anchorMonthDay(),
 		bySetPos: 0,
 		missingPolicy: TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID,
 	}
@@ -816,17 +827,6 @@ const draft = reactive({
 })
 
 const hasSeries = computed(() => Boolean(state.value?.series))
-
-function dateInputFromDate(date: Date | null) {
-	if (
-		!(date instanceof Date) ||
-		Number.isNaN(date.getTime())
-	) {
-		return ''
-	}
-
-	return date.toISOString().slice(0, 10)
-}
 
 function localDateInput(date: Date) {
 	const year = date.getFullYear()
@@ -849,13 +849,6 @@ function defaultEndDateInput() {
 function startTimestamp(date: string) {
 	if (!date) {
 		return undefined
-	}
-
-	if (
-		props.dueDate instanceof Date &&
-		!Number.isNaN(props.dueDate.getTime())
-	) {
-		return `${date}${props.dueDate.toISOString().slice(10)}`
 	}
 
 	const existingStartDate = state.value?.series?.startDate
@@ -927,7 +920,7 @@ function resetRecurrenceEditor() {
 	draft.missedPolicy = TASK_RECURRENCE_MISSED_POLICIES.NEXT_FUTURE
 	draft.paused = false
 
-	startDateInput.value = dateInputFromDate(props.dueDate)
+	startDateInput.value = localDateInput(new Date())
 	endDateInput.value = ''
 	showMoreOptions.value = false
 }
@@ -944,7 +937,7 @@ function loadSeries(series: ITaskRecurrenceSeries) {
 
 	startDateInput.value = series.startDate
 		? series.startDate.slice(0, 10)
-		: dateInputFromDate(props.dueDate)
+		: localDateInput(new Date())
 
 	endDateInput.value =
 		series.endType === TASK_RECURRENCE_END_TYPES.DATE &&
@@ -1001,7 +994,7 @@ function selectFrequency(frequency: TaskRecurrenceFrequency) {
 
 	if (frequency === TASK_RECURRENCE_FREQUENCIES.WEEK) {
 		rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.DEFAULT
-		rule.byWeekdays = dueWeekdayBit()
+		rule.byWeekdays = anchorWeekdayBit()
 		rule.byMonth = 0
 		rule.byMonthDay = 0
 		rule.bySetPos = 0
@@ -1013,7 +1006,7 @@ function selectFrequency(frequency: TaskRecurrenceFrequency) {
 		rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
 		rule.byWeekdays = 0
 		rule.byMonth = 0
-		rule.byMonthDay = dueMonthDay()
+		rule.byMonthDay = anchorMonthDay()
 		rule.bySetPos = 0
 		return
 	}
@@ -1021,8 +1014,8 @@ function selectFrequency(frequency: TaskRecurrenceFrequency) {
 	yearlyRuleType.value = 'monthDay'
 	rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
 	rule.byWeekdays = 0
-	rule.byMonth = dueMonth()
-	rule.byMonthDay = dueMonthDay()
+	rule.byMonth = anchorMonth()
+	rule.byMonthDay = anchorMonthDay()
 	rule.bySetPos = 0
 }
 
@@ -1032,7 +1025,7 @@ function setMonthlyRuleType(type: RuleType) {
 
 	if (type === 'monthDay') {
 		rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
-		rule.byMonthDay = dueMonthDay()
+		rule.byMonthDay = anchorMonthDay()
 		rule.byWeekdays = 0
 		rule.bySetPos = 0
 		return
@@ -1040,18 +1033,18 @@ function setMonthlyRuleType(type: RuleType) {
 
 	rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.SKIP
 	rule.byMonthDay = 0
-	rule.byWeekdays = dueWeekdayBit()
+	rule.byWeekdays = anchorWeekdayBit()
 	rule.bySetPos = 1
 }
 
 
 function setYearlyRuleType(type: RuleType) {
 	yearlyRuleType.value = type
-	rule.byMonth = rule.byMonth || dueMonth()
+	rule.byMonth = rule.byMonth || anchorMonth()
 
 	if (type === 'monthDay') {
 		rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
-		rule.byMonthDay = dueMonthDay()
+		rule.byMonthDay = anchorMonthDay()
 		rule.byWeekdays = 0
 		rule.bySetPos = 0
 		return
@@ -1059,7 +1052,7 @@ function setYearlyRuleType(type: RuleType) {
 
 	rule.missingPolicy = TASK_RECURRENCE_MISSING_POLICIES.SKIP
 	rule.byMonthDay = 0
-	rule.byWeekdays = dueWeekdayBit()
+	rule.byWeekdays = anchorWeekdayBit()
 	rule.bySetPos = 1
 }
 
@@ -1257,9 +1250,6 @@ function validate() {
 		throw new Error('Save the task before configuring recurrence.')
 	}
 
-	if (!props.dueDate) {
-		throw new Error('Set a due date before saving the recurring series.')
-	}
 
 	if (!startDateInput.value) {
 		throw new Error('Choose a start date.')
@@ -1392,7 +1382,9 @@ function buildSeries(): ITaskRecurrenceSeries {
 			draft.endType === TASK_RECURRENCE_END_TYPES.OCCURRENCES
 				? Math.max(1, draft.endAfterOccurrences)
 				: 0,
-		createBeforeDays: Math.max(0, draft.createBeforeDays),
+		createBeforeDays: props.dueDate
+			? Math.max(0, draft.createBeforeDays)
+			: 0,
 		weekendPolicy: draft.weekendPolicy,
 		missedPolicy: draft.missedPolicy,
 		paused: draft.paused,
@@ -1525,30 +1517,14 @@ watch(
 watch(
 	() => props.dueDate,
 	value => {
-		if (!hasSeries.value && value) {
-			if (!startDateInput.value) {
-				startDateInput.value = dateInputFromDate(value)
-			}
+		if (!value) {
+			draft.createBeforeDays = 0
 		}
 	},
 )
 </script>
 
 <style scoped>
-.recurrence-due-date-warning {
-	margin-top: 0.75rem;
-	border-left: 4px solid var(--warning);
-}
-
-.recurrence-due-date-warning strong {
-	display: block;
-	margin-bottom: 0.25rem;
-}
-
-.recurrence-due-date-warning p {
-	margin: 0;
-}
-
 .recurrence-series-editor {
 	width: 100%;
 	max-width: 52rem;

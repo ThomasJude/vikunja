@@ -94,26 +94,19 @@ func normalizeTaskRecurrenceSeriesForTask(
 	if doerID <= 0 {
 		return fmt.Errorf("recurrence series creator is required")
 	}
-	if task.DueDate.IsZero() {
-		return fmt.Errorf(
-			"task must have a due date before a recurrence series can be created",
-		)
-	}
-
 	series.RootTaskID = task.ID
 	series.ProjectID = task.ProjectID
 	series.CreatedByID = doerID
 
-	// The task's due date is occurrence #1 and therefore the stable recurrence
-	// anchor. The frontend may omit start_date when creating a series.
+	// StartDate is the recurrence schedule anchor and is independent from the
+	// task's optional DueDate.
 	if series.StartDate.IsZero() {
-		series.StartDate = task.DueDate
+		return fmt.Errorf("recurrence start date is required")
 	}
 
-	if !series.StartDate.Equal(task.DueDate) {
-		return fmt.Errorf(
-			"recurrence start date must match the task due date",
-		)
+	// Create-before is meaningful only when the task has a due date.
+	if task.DueDate.IsZero() {
+		series.CreateBeforeDays = 0
 	}
 
 	return nil
@@ -224,6 +217,13 @@ func SaveTaskRecurrenceSeriesForTask(
 			return nil, err
 		}
 
+		occurrenceDueDate := task.DueDate
+		if occurrenceDueDate.IsZero() {
+			// Recurrence occurrence metadata still needs a calendar anchor,
+			// even when the actual task has no due date.
+			occurrenceDueDate = series.StartDate
+		}
+
 		// The first occurrence is the task the user is currently editing.
 		// Never retroactively weekend-shift it: its persisted due date is the
 		// authoritative due date for occurrence #1. Policies apply when the
@@ -233,7 +233,7 @@ func SaveTaskRecurrenceSeriesForTask(
 			TaskID:           task.ID,
 			Sequence:         1,
 			ScheduledDueDate: series.StartDate,
-			DueDate:          task.DueDate,
+			DueDate:          occurrenceDueDate,
 		}
 
 		if err := createTaskRecurrenceOccurrence(
@@ -286,6 +286,10 @@ func SaveTaskRecurrenceSeriesForTask(
 	updated.RootTaskID = existing.RootTaskID
 	updated.ProjectID = existing.ProjectID
 	updated.CreatedByID = existing.CreatedByID
+
+	if task.DueDate.IsZero() {
+		updated.CreateBeforeDays = 0
+	}
 
 	// An existing occurrence may have an occurrence-only due-date exception.
 	// The recurrence schedule anchor therefore must not be forced to match the
