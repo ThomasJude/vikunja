@@ -1068,11 +1068,9 @@ function hasWeekday(bit: number) {
 }
 
 function toggleWeekday(bit: number) {
-	if (hasWeekday(bit)) {
-		rule.byWeekdays &= ~bit
-	} else {
-		rule.byWeekdays |= bit
-	}
+	rule.byWeekdays = hasWeekday(bit)
+		? rule.byWeekdays & ~bit
+		: rule.byWeekdays | bit
 }
 
 
