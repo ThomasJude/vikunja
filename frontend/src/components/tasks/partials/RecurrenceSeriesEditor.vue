@@ -1673,4 +1673,8 @@ watch(
         outline-offset: 2px;
 }
 
+.weekday-buttons :deep(.button:not(.recurrence-choice-active):focus:not(:focus-visible)) {
+        outline: none;
+}
+
 </style>
