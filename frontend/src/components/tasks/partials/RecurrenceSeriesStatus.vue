@@ -33,6 +33,7 @@ import TaskRecurrenceSeriesService from '@/services/taskRecurrenceSeries'
 import {
 	TASK_RECURRENCE_BASES,
 	TASK_RECURRENCE_FREQUENCIES,
+	TASK_RECURRENCE_MISSING_POLICIES,
 } from '@/modelTypes/ITaskRecurrence'
 
 import type {
@@ -168,8 +169,41 @@ const summary = computed(() => {
 
 			if (rule.byMonthDay > 0) {
 				text += ` on the ${ordinalNumber(rule.byMonthDay)}`
+
+				if (rule.byMonthDay >= 29) {
+					if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
+					) {
+						text += ', using the last day of the month when needed'
+					} else if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.SKIP
+					) {
+						text += ', skipping months without that date'
+					}
+				}
 			} else {
 				text += ` on the ${ordinalPosition(rule.bySetPos)} ${weekdayName(rule.byWeekdays)}`
+
+				if (rule.bySetPos === 5) {
+					if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.SKIP
+					) {
+						text += ', skipping months without one'
+					} else if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.LAST_OCCURRENCE
+					) {
+						text += ', using the last occurrence when a fifth does not exist'
+					} else if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.NEXT_PERIOD
+					) {
+						text += ', using the first occurrence in the following month when needed'
+					}
+				}
 			}
 			break
 
@@ -180,8 +214,44 @@ const summary = computed(() => {
 
 			if (rule.byMonthDay > 0) {
 				text += ` on ${months[rule.byMonth]} ${rule.byMonthDay}`
+
+				if (
+					(rule.byMonth === 2 && rule.byMonthDay > 28) ||
+					([4, 6, 9, 11].includes(rule.byMonth) && rule.byMonthDay > 30)
+				) {
+					if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
+					) {
+						text += ', using the last day of the month when needed'
+					} else if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.SKIP
+					) {
+						text += ', skipping years without that date'
+					}
+				}
 			} else {
 				text += ` on the ${ordinalPosition(rule.bySetPos)} ${weekdayName(rule.byWeekdays)} of ${months[rule.byMonth]}`
+
+				if (rule.bySetPos === 5) {
+					if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.SKIP
+					) {
+						text += ', skipping years without one'
+					} else if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.LAST_OCCURRENCE
+					) {
+						text += ', using the last occurrence when a fifth does not exist'
+					} else if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.NEXT_PERIOD
+					) {
+						text += ', using the first occurrence in the following month when needed'
+					}
+				}
 			}
 			break
 	}
