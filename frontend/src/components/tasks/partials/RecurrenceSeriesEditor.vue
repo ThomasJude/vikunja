@@ -1206,17 +1206,45 @@ const summary = computed(() => {
 				text = interval === 1
 					? `Every year on ${monthLabel(rule.byMonth)} ${rule.byMonthDay}`
 					: `Every ${interval} years on ${monthLabel(rule.byMonth)} ${rule.byMonthDay}`
+
+				if (
+					(rule.byMonth === 2 && rule.byMonthDay > 28) ||
+					([4, 6, 9, 11].includes(rule.byMonth) && rule.byMonthDay > 30)
+				) {
+					if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.LAST_VALID
+					) {
+						text += ', using the last day of the month when needed'
+					} else if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.SKIP
+					) {
+						text += ', skipping years without that date'
+					}
+				}
 			} else {
 				text = interval === 1
 					? `Every year on the ${ordinalLabel(rule.bySetPos)} ${weekdayLabel(rule.byWeekdays)} of ${monthLabel(rule.byMonth)}`
 					: `Every ${interval} years on the ${ordinalLabel(rule.bySetPos)} ${weekdayLabel(rule.byWeekdays)} of ${monthLabel(rule.byMonth)}`
 
-				if (
-					rule.bySetPos === 5 &&
-                                        rule.missingPolicy ===
-                                        TASK_RECURRENCE_MISSING_POLICIES.SKIP
-				) {
-					text += ', skipping years without one'
+				if (rule.bySetPos === 5) {
+					if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.SKIP
+					) {
+						text += ', skipping years without one'
+					} else if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.LAST_OCCURRENCE
+					) {
+						text += ', using the last occurrence when a fifth does not exist'
+					} else if (
+						rule.missingPolicy ===
+							TASK_RECURRENCE_MISSING_POLICIES.NEXT_PERIOD
+					) {
+						text += ', using the first occurrence in the following month when needed'
+					}
 				}
 			}
 			break
