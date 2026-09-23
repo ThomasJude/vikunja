@@ -189,7 +189,7 @@ func TestNestedTeamProjectPermissionHighestWins(t *testing.T) {
 
 	now := time.Now()
 
-	// Child grants Read directly.
+	// Direct read access from the child team.
 	_, err = s.Exec(
 		`INSERT INTO team_projects
 			(team_id, project_id, permission, created, updated)
@@ -198,7 +198,7 @@ func TestNestedTeamProjectPermissionHighestWins(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Parent grants Admin through nesting.
+	// Admin access inherited from the parent team.
 	_, err = s.Exec(
 		`INSERT INTO team_projects
 			(team_id, project_id, permission, created, updated)
@@ -274,8 +274,7 @@ func TestNestedTeamProjectPermissionRevokedAfterRelationRemoval(t *testing.T) {
 	require.NoError(t, s.Commit())
 	s.Close()
 
-	// New session represents the next request and avoids the per-session
-	// project-access cache.
+	// Use a fresh session to avoid reusing cached project access.
 	s = db.NewSession()
 	defer s.Close()
 
@@ -321,7 +320,7 @@ func TestDirectProjectPermissionSurvivesRelationRemoval(t *testing.T) {
 
 	now := time.Now()
 
-	// Direct child-team Write permission.
+	// Direct write access from the child team.
 	_, err = s.Exec(
 		`INSERT INTO team_projects
 			(team_id, project_id, permission, created, updated)
@@ -330,7 +329,7 @@ func TestDirectProjectPermissionSurvivesRelationRemoval(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Inherited parent-team Admin permission.
+	// Admin access inherited from the parent team.
 	_, err = s.Exec(
 		`INSERT INTO team_projects
 			(team_id, project_id, permission, created, updated)
