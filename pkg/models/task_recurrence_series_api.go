@@ -358,8 +358,7 @@ func SetTaskRecurrenceSeriesPausedForTask(
 	}, nil
 }
 
-// UpdateTaskRecurrenceScoped exposes the tested scoped task-update service to
-// API routes without exposing its persistence helpers.
+// UpdateTaskRecurrenceScoped applies a scoped update to recurring task occurrences.
 func UpdateTaskRecurrenceScoped(
 	s *xorm.Session,
 	taskID int64,
@@ -403,7 +402,7 @@ func UpdateTaskRecurrenceScoped(
 	}, nil
 }
 
-// DeleteTaskRecurrenceScoped exposes the tested scoped soft-delete service.
+// DeleteTaskRecurrenceScoped deletes recurring task occurrences using the requested scope.
 func DeleteTaskRecurrenceScoped(
 	s *xorm.Session,
 	taskID int64,
