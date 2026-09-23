@@ -36,9 +36,10 @@ import {
 	TASK_RECURRENCE_MISSING_POLICIES,
 } from '@/modelTypes/ITaskRecurrence'
 
-import type {
-	ITaskRecurrenceSeries,
-	ITaskRecurrenceSeriesState,
+import {
+	TASK_RECURRENCE_END_TYPES,
+	type ITaskRecurrenceSeries,
+	type ITaskRecurrenceSeriesState,
 } from '@/modelTypes/ITaskRecurrenceSeries'
 
 const props = defineProps<{
@@ -258,6 +259,22 @@ const summary = computed(() => {
 
 	if (rule.basis === TASK_RECURRENCE_BASES.COMPLETION) {
 		text += ' after completion'
+	}
+
+	if (rule.createBeforeDays > 0) {
+		const unit = rule.createBeforeDays === 1 ? 'day' : 'days'
+		text += `, created ${rule.createBeforeDays} ${unit} before the due date`
+	}
+
+	if (
+		rule.endType === TASK_RECURRENCE_END_TYPES.DATE &&
+		rule.endDate
+	) {
+		text += `, ending on ${rule.endDate.slice(0, 10)}`
+	} else if (
+		rule.endType === TASK_RECURRENCE_END_TYPES.OCCURRENCES
+	) {
+		text += `, ending after ${Math.max(1, rule.endAfterOccurrences)} occurrences`
 	}
 
 	return `${text}.`
