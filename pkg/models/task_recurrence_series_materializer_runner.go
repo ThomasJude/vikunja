@@ -121,8 +121,8 @@ func materializeTaskRecurrenceSeriesOnceAtSession(
 	return occurrence != nil, nil
 }
 
-// materializeTaskRecurrenceSeriesAtSession is the fixture/test-friendly
-// runner. The caller controls the surrounding transaction.
+// materializeTaskRecurrenceSeriesAtSession runs materialization using the
+// caller's transaction.
 func materializeTaskRecurrenceSeriesAtSession(
 	s *xorm.Session,
 	seriesID int64,
